@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quantum Checkers</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --board-size: min(90vw, 700px);
+            --square-size: calc(var(--board-size) / 8);
+            --piece-size: calc(var(--square-size) * 0.8);
+            --ghost-icon-size: 24px;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            touch-action: manipulation;
+            background-color: #f3f4f6; /* gray-100 */
+        }
+        .board {
+            width: var(--board-size);
+            height: var(--board-size);
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            border-radius: 0.5rem; /* No border */
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            position: relative;
+            background-color: #ffffff; 
+            overflow: hidden; /* Ensures rounded corners clip the squares */
+        }
+        .square {
+            width: var(--square-size);
+            height: var(--square-size);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            z-index: 1;
+        }
+        .light { background-color: #ffffff; }
+        .dark { background-color: #718096; } /* Restored old dark color */
+        .piece {
+            width: var(--piece-size);
+            height: var(--piece-size);
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+            box-shadow: inset 0 -4px 6px rgba(0,0,0,0.2), 0 2px 4px rgba(0,0,0,0.3);
+            position: relative;
+            z-index: 10;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .ghost-piece {
+            width: var(--ghost-icon-size);
+            height: var(--ghost-icon-size);
+            opacity: 0.6;
+            z-index: 5;
+            position: absolute;
+            pointer-events: none;
+            box-shadow: none;
+            filter: saturate(0.5);
+            border-style: dashed;
+            border-width: 2px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .red-piece.ghost-piece { border-color: #ef4444; background-color: #ef444444; }
+        .black-piece.ghost-piece { border-color: #1f2937; background-color: #1f293744; }
+        .ghost-piece .piece-id {
+            font-size: 10px;
+            color: white;
+            font-weight: bold;
+            text-shadow: 0 0 2px black;
+        }
+        .piece-id { 
+            font-size: calc(var(--piece-size) * 0.4);
+            font-weight: bold;
+            color: white;
+            -webkit-user-select: none; 
+            -ms-user-select: none;
+            user-select: none;
+        }
+        .red-piece { background-color: #ef4444; }
+        .black-piece { background-color: #1f2937; }
+        .king::after {
+            content: '👑';
+            font-size: calc(var(--piece-size) * 0.6);
+            color: #facc15;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-shadow: 0 0 4px black;
+            z-index: 11;
+        }
+        .selected {
+            transform: scale(1.1);
+            box-shadow: 0 0 0 4px #60a5fa, inset 0 -4px 6px rgba(0,0,0,0.2), 0 2px 4px rgba(0,0,0,0.3);
+        }
+        .possible-move::before {
+            content: '';
+            position: absolute;
+            width: 40%;
+            height: 40%;
+            background-color: rgba(96, 165, 250, 0.5);
+            border-radius: 50%;
+            animation: pulse 1.5s infinite;
+            z-index: 20;
+        }
+        @keyframes pulse {
+            0% { transform: scale(0.9); opacity: 0.7; }
+            50% { transform: scale(1.1); opacity: 1; }
+            100% { transform: scale(0.9); opacity: 0.7; }
+        }
+        #message-box {
+            transition: opacity 0.5s, transform 0.5s;
+        }
+        .modal-overlay {
+            transition: opacity 0.3s ease-in-out;
+        }
+        .modal-content {
+            transition: transform 0.3s ease-in-out;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex flex-col items-center justify-center min-h-screen p-4">
+
+    <div id="game-container" class="w-full max-w-max flex flex-col items-center">
+        <!-- Responsive Title -->
+        <h1 class="text-3xl sm:text-4xl font-bold text-gray-800 mb-4 text-center">Quantum Checkers</h1>
+        <!-- Responsive Status Display -->
+        <div id="status-display" class="mb-4 text-xl sm:text-2xl font-bold text-gray-700 bg-white px-6 py-3 rounded-lg shadow-md">
+            Red's Turn
+        </div>
+
+        <div id="board-wrapper" class="relative">
+            <div id="board" class="board"></div>
+            <div id="ghost-layer" class="absolute top-0 left-0 w-full h-full pointer-events-none"></div>
+        </div>
+
+        <!-- Responsive Button Container -->
+        <div class="flex flex-col sm:flex-row sm:space-x-4 mt-6 w-full max-w-xs sm:max-w-none sm:w-auto space-y-3 sm:space-y-0">
+            <button id="tutorial-button" class="w-full sm:w-auto px-6 py-2 bg-white text-gray-700 border border-gray-300 font-semibold rounded-lg shadow-sm hover:bg-gray-50 transition-colors">
+                How to Play
+            </button>
+            <button id="reset-button" class="w-full sm:w-auto px-6 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-colors">
+                New Game
+            </button>
+            <button id="undo-button" class="w-full sm:w-auto px-6 py-2 bg-gray-600 text-white font-semibold rounded-lg shadow-md hover:bg-gray-700 transition-colors">
+                Undo
+            </button>
+        </div>
+    </div>
+
+    <!-- Tutorial Modal -->
+    <div id="tutorial-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 hidden modal-overlay opacity-0">
+        <div class="modal-content bg-white rounded-lg shadow-2xl p-6 md:p-8 max-w-2xl w-full transform scale-95">
+            <h2 class="text-3xl font-bold text-gray-800 mb-4">How to Play Quantum Checkers</h2>
+            <div class="text-gray-600 space-y-3 max-h-[60vh] overflow-y-auto pr-2">
+                <p><strong class="text-gray-800">The Basics:</strong> The game plays like standard checkers. Your goal is to eliminate all of the opponent's pieces.</p>
+                <p><strong class="text-gray-800">Quantum Ghosts:</strong> Every time a piece moves, it leaves behind a <strong class="text-blue-600">ghost</strong> of itself in its previous position. A piece exists in a superposition of its current location and all of its past ghost locations.</p>
+                <p><strong class="text-gray-800">Observation & Collapse:</strong> Jumping an opponent's piece or ghost is an "observation" that causes a quantum collapse.</p>
+                <ul class="list-disc list-inside space-y-2 pl-2">
+                    <li>When you jump a piece (or its ghost), the jumped piece doesn't get captured immediately. Instead, it <strong class="text-red-600">collapses</strong> to a previous state in its history.</li>
+                    <li>If you jump a <strong class="font-semibold">real piece</strong>, it collapses to its most recent previous position.</li>
+                    <li>If you jump a <strong class="font-semibold">ghost</strong>, the piece collapses to the position it was in *before* the state of the jumped ghost.</li>
+                    <li>If a piece has no valid prior state to collapse to, it is <strong class="font-semibold">captured</strong> and removed from the game.</li>
+                </ul>
+                <p><strong class="text-gray-800">Interference & Cascades:</strong></p>
+                 <ul class="list-disc list-inside space-y-2 pl-2">
+                    <li>If a piece tries to collapse to a square that your jumping piece just landed on, it causes <strong class="text-purple-600">interference</strong>. The collapsing piece is captured instead.</li>
+                    <li>If a piece tries to collapse to a square already occupied by another real piece, it triggers a <strong class="text-purple-600">cascade</strong>. The occupying piece is forced to collapse to *its* previous state, which can set off a chain reaction.</li>
+                </ul>
+                 <p><strong class="text-gray-800">Mandatory vs. Optional Jumps:</strong></p>
+                 <ul class="list-disc list-inside space-y-2 pl-2">
+                    <li>Jumping a <strong class="font-semibold">REAL</strong> piece is <strong class="text-red-600">MANDATORY</strong>, just like in standard checkers.</li>
+                    <li>Jumping a <strong class="font-semibold">GHOST</strong> is <strong class="text-blue-600">OPTIONAL</strong>. You can choose to make a standard move instead. This creates a risk/reward choice!</li>
+                </ul>
+            </div>
+            <div class="mt-6 text-right">
+                <button id="close-tutorial-button" class="px-6 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-colors">Got it!</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="message-box" class="fixed top-5 right-5 bg-red-500 text-white py-3 px-5 rounded-lg shadow-xl opacity-0 transform -translate-y-10">
+        <p id="message-text"></p>
+    </div>
+
+    <script>
+        // ========================================================================
+        // main.js - Main game state and event handling
+        // ========================================================================
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- Logger ---
+            const logger = {
+                _enabled: true,
+                log(group, ...args) { if (this._enabled) console.log(`[${group}]`, ...args); },
+                info(group, ...args) { if (this._enabled) console.info(`[${group}]`, ...args); },
+                warn(group, ...args) { if (this._enabled) console.warn(`[${group}]`, ...args); },
+                error(group, ...args) { if (this._enabled) console.error(`[${group}]`, ...args); },
+                group(name) { if (this._enabled) console.group(name); },
+                groupEnd() { if (this._enabled) console.groupEnd(); }
+            };
+
+            // --- Game State Variables ---
+            let pieces, boardState, turn;
+            let selectedPieceId = null;
+            let isMultiJump = false;
+            let gameHistory = [];
+            let audioInitialized = false; // For sound
+
+            // --- DOM Elements (from ui.js) ---
+            const ui = initUI(logger);
+
+            function handleSquareClick(e) {
+                if (!audioInitialized) {
+                    ui.sound.init();
+                    audioInitialized = true;
+                    logger.info('Audio', 'Audio context started.');
+                }
+                const square = e.currentTarget;
+                const row = parseInt(square.dataset.row);
+                const col = parseInt(square.dataset.col);
+                const pieceIdOnSquare = boardState[row][col];
+                
+                logger.group(`Player Click on [${row}, ${col}]`);
+                logger.log('Click', `Turn: ${turn}, Selected: ${selectedPieceId}, MultiJump: ${isMultiJump}`);
+
+                if (isMultiJump && pieceIdOnSquare && selectedPieceId !== pieceIdOnSquare) {
+                    ui.showMessage("You must complete the multi-jump with the original piece.");
+                    logger.warn('Click', 'Attempted to select a different piece during multi-jump.');
+                    ui.sound.error();
+                    logger.groupEnd();
+                    return;
+                }
+
+                if (selectedPieceId) {
+                    const possibleMoves = getPossibleMoves(selectedPieceId, pieces, boardState, logger);
+                    const targetMove = possibleMoves.find(move => move.endRow === row && move.endCol === col);
+
+                    if (targetMove) {
+                        logger.log('Click', 'Valid move selected. Executing move...');
+                        gameHistory.push({
+                            pieces: JSON.parse(JSON.stringify(pieces)),
+                            boardState: JSON.parse(JSON.stringify(boardState)),
+                            turn: turn
+                        });
+                        movePiece(selectedPieceId, targetMove);
+                    } else {
+                        logger.log('Click', 'Deselecting piece.');
+                        ui.clearHighlights();
+                        selectedPieceId = null;
+                    }
+                } else if (pieceIdOnSquare && pieces[pieceIdOnSquare].player === turn) {
+                    logger.log('Click', `Selecting piece ${pieceIdOnSquare}.`);
+                    selectedPieceId = pieceIdOnSquare;
+                    ui.highlightPieceAndMoves(selectedPieceId, pieces, boardState);
+                    ui.sound.select();
+                } else {
+                     logger.log('Click', 'Empty square or opponent piece clicked. No action.');
+                }
+                logger.groupEnd();
+            }
+            
+            function movePiece(pieceId, move) {
+                logger.group(`MOVE: Piece ${pieceId}`);
+                const piece = pieces[pieceId];
+                const { row, col } = piece.history[piece.history.length - 1];
+                const { endRow, endCol, jumpedInfo } = move;
+
+                logger.log('Move', `Moving from [${row},${col}] to [${endRow},${endCol}]`);
+
+                boardState[row][col] = null;
+                boardState[endRow][endCol] = pieceId;
+                piece.history.push({ row: endRow, col: endCol });
+
+                if ((piece.player === 'r' && endRow === 0) || (piece.player === 'b' && endRow === 7)) {
+                    if (!piece.isKing) {
+                        piece.isKing = true;
+                        logger.info('King', `Piece ${pieceId} has been crowned a king!`);
+                    }
+                }
+
+                if (jumpedInfo) {
+                    ui.sound.capture();
+                    const type = jumpedInfo.isGhost ? "ghost" : "real piece";
+                    ui.showMessage(`Observation! A ${type} of piece ${jumpedInfo.id} was jumped.`);
+                    logger.warn('Observation', `A ${type} of piece ${jumpedInfo.id} was jumped. Triggering collapse.`);
+                    
+                    const protectedSquare = { row: endRow, col: endCol };
+                    triggerCollapse(jumpedInfo.id, jumpedInfo.jumpedHistoryIndex, pieces, boardState, ui, logger, protectedSquare);
+                    
+                    const furtherJumps = getPossibleMoves(pieceId, pieces, boardState, logger).filter(m => m.jumpedInfo);
+                    if (furtherJumps.length > 0) {
+                        isMultiJump = true;
+                        selectedPieceId = pieceId;
+                        logger.info('Multi-Jump', `Another jump is available for ${pieceId}.`);
+                        ui.renderBoard(pieces, boardState, handleSquareClick);
+                        ui.highlightPieceAndMoves(pieceId, pieces, boardState);
+                        ui.updateStatus("Complete the multi-jump!", turn);
+                        logger.groupEnd();
+                        return;
+                    }
+                } else {
+                    ui.sound.move();
+                }
+                
+                selectedPieceId = null;
+                isMultiJump = false;
+                switchTurn();
+                ui.renderBoard(pieces, boardState, handleSquareClick);
+                checkWinCondition(pieces, turn, ui, boardState, logger);
+                logger.groupEnd();
+            }
+
+            function switchTurn() {
+                turn = (turn === 'r') ? 'b' : 'r';
+                logger.info('Turn Switch', `It is now ${turn === 'r' ? 'Red' : 'Black'}'s turn.`);
+                ui.updateStatus(null, turn);
+            }
+
+            function startGame() {
+                logger.group("NEW GAME");
+                const initialState = initGame(logger);
+                pieces = initialState.pieces;
+                boardState = initialState.boardState;
+                turn = 'r';
+                selectedPieceId = null;
+                isMultiJump = false;
+                gameHistory = [];
+                ui.renderBoard(pieces, boardState, handleSquareClick);
+                ui.updateStatus(null, turn);
+                logger.info('Game Start', 'Board initialized. Red player starts.');
+                logger.groupEnd();
+            }
+
+            function handleUndo() {
+                logger.group("UNDO");
+                if (gameHistory.length > 0) {
+                    const lastState = gameHistory.pop();
+                    pieces = lastState.pieces;
+                    boardState = lastState.boardState;
+                    turn = lastState.turn;
+                    selectedPieceId = null;
+                    isMultiJump = false;
+                    ui.renderBoard(pieces, boardState, handleSquareClick);
+                    ui.updateStatus(null, turn);
+                    ui.clearHighlights();
+                    logger.info('Undo', 'Reverted to previous game state.');
+                } else {
+                    ui.showMessage("No more moves to undo.");
+                    logger.warn('Undo', 'Undo stack is empty.');
+                }
+                logger.groupEnd();
+            }
+
+            ui.resetButton.addEventListener('click', startGame);
+            ui.undoButton.addEventListener('click', handleUndo);
+            ui.tutorialButton.addEventListener('click', () => ui.toggleTutorial(true));
+            ui.closeTutorialButton.addEventListener('click', () => ui.toggleTutorial(false));
+            ui.tutorialModal.addEventListener('click', (e) => {
+                if (e.target === ui.tutorialModal) {
+                    ui.toggleTutorial(false);
+                }
+            });
+            startGame();
+        });
+
+        // ========================================================================
+        // gameLogic.js - Core rules and state manipulation for Quantum Checkers
+        // ========================================================================
+
+        function initGame(logger) {
+            const pieces = {};
+            const boardState = Array(8).fill(null).map(() => Array(8).fill(null));
+            let redCounter = 1;
+            let blackCounter = 1;
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    if ((r + c) % 2 === 1) {
+                        let p = null, id = null;
+                        if (r < 3) { p = 'b'; id = `b${blackCounter++}`; } 
+                        else if (r > 4) { p = 'r'; id = `r${redCounter++}`; }
+                        if (p) {
+                            pieces[id] = { id, player: p, isKing: false, history: [{ row: r, col: c }] };
+                            boardState[r][c] = id;
+                        }
+                    }
+                }
+            }
+            logger.log('Init', 'Created initial pieces and board state.', pieces);
+            return { pieces, boardState };
+        }
+        
+        function triggerCollapse(pieceId, jumpedHistoryIndex, pieces, boardState, ui, logger, protectedSquare) {
+            logger.group(`COLLAPSE: Piece ${pieceId}`);
+            const piece = pieces[pieceId];
+            if (!piece) {
+                logger.error('Collapse', `Piece ${pieceId} not found, likely already captured.`);
+                logger.groupEnd();
+                return;
+            }
+
+            const targetHistoryIndex = jumpedHistoryIndex - 1;
+
+            if (targetHistoryIndex < 0) {
+                ui.showMessage(`Collapse failed! Piece ${pieceId} is captured.`);
+                logger.error('Capture', `Piece ${pieceId} has no previous state before the jumped state and is captured.`);
+                ui.sound.capture();
+                const currentPos = piece.history[piece.history.length - 1];
+                boardState[currentPos.row][currentPos.col] = null;
+                delete pieces[pieceId];
+                logger.groupEnd();
+                return;
+            }
+
+            const currentPos = piece.history[piece.history.length - 1];
+            const targetPos = piece.history[targetHistoryIndex];
+            logger.warn('Collapse', `Piece ${pieceId} is collapsing from [${currentPos.row},${currentPos.col}] to state #${targetHistoryIndex} at [${targetPos.row},${targetPos.col}].`);
+            
+            if (protectedSquare && targetPos.row === protectedSquare.row && targetPos.col === protectedSquare.col) {
+                ui.showMessage(`Interference! Piece ${pieceId} is captured by jumping piece.`);
+                logger.error('Capture', `Piece ${pieceId} tried to collapse into protected square [${targetPos.row},${targetPos.col}] and is captured.`);
+                ui.sound.capture();
+                boardState[currentPos.row][currentPos.col] = null;
+                delete pieces[pieceId];
+                logger.groupEnd();
+                return;
+            }
+
+            const occupyingId = boardState[targetPos.row][targetPos.col];
+            if (occupyingId) {
+                ui.showMessage(`Cascade! Piece ${occupyingId} is displaced.`);
+                logger.warn('Cascade', `Target spot is occupied by ${occupyingId}. Triggering another collapse on it.`);
+                const displacedPiece = pieces[occupyingId];
+                triggerCollapse(occupyingId, displacedPiece.history.length - 1, pieces, boardState, ui, logger, null);
+            }
+
+            boardState[currentPos.row][currentPos.col] = null;
+            boardState[targetPos.row][targetPos.col] = pieceId;
+            piece.history = piece.history.slice(0, targetHistoryIndex + 1);
+            logger.info('Collapse', `Piece ${pieceId} successfully collapsed. New history length: ${piece.history.length}.`);
+            logger.groupEnd();
+        }
+
+        function getPossibleMoves(pieceId, pieces, boardState, logger) {
+            const piece = pieces[pieceId];
+            const { row, col } = piece.history[piece.history.length - 1];
+            const regularMoves = [];
+            const realJumpMoves = [];
+            const ghostJumpMoves = [];
+            const directions = [];
+
+            if (piece.player === 'r') directions.push([-1, -1], [-1, 1]);
+            else if (piece.player === 'b') directions.push([1, -1], [1, 1]);
+            if (piece.isKing) directions.push(...[[-1,-1], [-1,1], [1,-1], [1,1]].filter(d => !directions.some(d2 => d2[0] === d[0] && d2[1] === d[1])));
+
+            for (const [dr, dc] of directions) {
+                const jumpMidRow = row + dr, jumpMidCol = col + dc;
+                const jumpEndRow = row + 2 * dr, jumpEndCol = col + 2 * dc;
+
+                if (isValidSquare(jumpEndRow, jumpEndCol) && boardState[jumpEndRow][jumpEndCol] === null) {
+                    const realJumpedId = boardState[jumpMidRow][jumpMidCol];
+                    if (realJumpedId && pieces[realJumpedId] && pieces[realJumpedId].player !== piece.player) {
+                        const jumpedPiece = pieces[realJumpedId];
+                        const historyIndex = jumpedPiece.history.length - 1;
+                        realJumpMoves.push({ endRow: jumpEndRow, endCol: jumpEndCol, jumpedInfo: { id: realJumpedId, isGhost: false, jumpedHistoryIndex: historyIndex } });
+                    } else {
+                         for (const id in pieces) {
+                            if (pieces[id].player !== piece.player) {
+                                const opponent = pieces[id];
+                                const historyIndex = opponent.history.findIndex(p => p.row === jumpMidRow && p.col === jumpMidCol);
+                                if (historyIndex !== -1 && historyIndex < opponent.history.length - 1) {
+                                     ghostJumpMoves.push({ endRow: jumpEndRow, endCol: jumpEndCol, jumpedInfo: { id: id, isGhost: true, jumpedHistoryIndex: historyIndex } });
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                const endRow = row + dr, endCol = col + dc;
+                if (isValidSquare(endRow, endCol) && boardState[endRow][endCol] === null) {
+                    regularMoves.push({ endRow, endCol, jumpedInfo: null });
+                }
+            }
+
+            if (realJumpMoves.length > 0) {
+                logger.warn('Moves', `Mandatory real jumps found for ${pieceId}:`, realJumpMoves);
+                return [...new Map(realJumpMoves.map(item => [JSON.stringify(item.jumpedInfo), item])).values()];
+            }
+            const allOptionalMoves = [...ghostJumpMoves, ...regularMoves];
+            logger.log('Moves', `Found ${allOptionalMoves.length} optional moves for ${pieceId} (ghost jumps + regular).`);
+            return [...new Map(allOptionalMoves.map(item => [JSON.stringify(item), item])).values()];
+        }
+
+        function isValidSquare(row, col) {
+            return row >= 0 && row < 8 && col >= 0 && col < 8;
+        }
+        
+        function checkWinCondition(pieces, turn, ui, boardState, logger) {
+            const redPieces = Object.values(pieces).filter(p => p.player === 'r');
+            const blackPieces = Object.values(pieces).filter(p => p.player === 'b');
+
+            if (redPieces.length === 0) return ui.endGame('b', logger);
+            if (blackPieces.length === 0) return ui.endGame('r', logger);
+            
+            const currentPlayerPieces = (turn === 'r') ? redPieces : blackPieces;
+            const hasMoves = currentPlayerPieces.some(p => getPossibleMoves(p.id, pieces, boardState, logger).length > 0);
+
+            if (!hasMoves) {
+                logger.error('Win Condition', `Player ${turn} has no more moves. They lose.`);
+                return ui.endGame(turn === 'r' ? 'b' : 'r', logger);
+            }
+        }
+
+        // ========================================================================
+        // ui.js - All functions related to DOM manipulation
+        // ========================================================================
+
+        function initUI(logger) {
+            return {
+                boardElement: document.getElementById('board'),
+                ghostLayer: document.getElementById('ghost-layer'),
+                statusDisplay: document.getElementById('status-display'),
+                resetButton: document.getElementById('reset-button'),
+                undoButton: document.getElementById('undo-button'),
+                tutorialButton: document.getElementById('tutorial-button'),
+                closeTutorialButton: document.getElementById('close-tutorial-button'),
+                tutorialModal: document.getElementById('tutorial-modal'),
+                messageBox: document.getElementById('message-box'),
+                messageText: document.getElementById('message-text'),
+                sound: {
+                    _initialized: false,
+                    _synth: null,
+                    init() {
+                        if (this._initialized || typeof Tone === 'undefined') return;
+                        this._synth = new Tone.Synth().toDestination();
+                        this._initialized = true;
+                    },
+                    play(note, duration = '8n') {
+                        if (!this._initialized) return;
+                        this._synth.triggerAttackRelease(note, duration);
+                    },
+                    select() { this.play('C5', '16n'); },
+                    move() { this.play('E4', '16n'); },
+                    capture() { this.play('G3', '8n'); },
+                    error() { this.play('F#3', '16n'); }
+                },
+
+                renderBoard(pieces, boardState, handler) {
+                    this.boardElement.innerHTML = '';
+                    this.ghostLayer.innerHTML = '';
+                    for (let r = 0; r < 8; r++) {
+                        for (let c = 0; c < 8; c++) {
+                            const square = document.createElement('div');
+                            square.classList.add('square', (r + c) % 2 === 0 ? 'light' : 'dark');
+                            square.dataset.row = r;
+                            square.dataset.col = c;
+                            square.addEventListener('click', handler);
+                            this.boardElement.appendChild(square);
+                        }
+                    }
+                    for (const id in pieces) {
+                        const piece = pieces[id];
+                        piece.history.slice(0, -1).forEach((pos, index) => {
+                             this.ghostLayer.appendChild(this.createPieceElement(piece, true, pos, index));
+                        });
+                        const currentPos = piece.history[piece.history.length - 1];
+                        const square = this.boardElement.querySelector(`[data-row='${currentPos.row}'][data-col='${currentPos.col}']`);
+                        if (square) {
+                            square.appendChild(this.createPieceElement(piece, false, currentPos));
+                        }
+                    }
+                    logger.log('UI', 'Board and Ghost Layer re-rendered.');
+                },
+
+                createPieceElement(piece, isGhost, pos) {
+                    const pieceElement = document.createElement('div');
+                    const idElement = document.createElement('span');
+                    idElement.classList.add('piece-id');
+                    idElement.textContent = piece.id;
+                    
+                    if (isGhost) {
+                        pieceElement.classList.add('ghost-piece', piece.player === 'r' ? 'red-piece' : 'black-piece');
+                        pieceElement.style.left = `calc(var(--square-size) * ${pos.col} + 2px)`;
+                        pieceElement.style.top = `calc(var(--square-size) * ${pos.row} + 2px)`;
+                    } else {
+                        pieceElement.classList.add('piece', piece.player === 'r' ? 'red-piece' : 'black-piece');
+                    }
+                    
+                    pieceElement.appendChild(idElement);
+                    if (piece.isKing) pieceElement.classList.add('king');
+                    return pieceElement;
+                },
+                
+                highlightPieceAndMoves(pieceId, pieces, boardState) {
+                    this.clearHighlights();
+                    const piece = pieces[pieceId];
+                    const pos = piece.history[piece.history.length - 1];
+                    const square = this.boardElement.querySelector(`[data-row='${pos.row}'][data-col='${pos.col}']`);
+                    if (square && square.firstChild) {
+                        square.firstChild.classList.add('selected');
+                    }
+                    const moves = getPossibleMoves(pieceId, pieces, boardState, logger);
+                    moves.forEach(move => {
+                        const moveSquare = this.boardElement.querySelector(`[data-row='${move.endRow}'][data-col='${move.endCol}']`);
+                        if (moveSquare) moveSquare.classList.add('possible-move');
+                    });
+                },
+
+                clearHighlights() {
+                    document.querySelectorAll('.selected').forEach(el => el.classList.remove('selected'));
+                    document.querySelectorAll('.possible-move').forEach(el => el.classList.remove('possible-move'));
+                },
+
+                updateStatus(message, turn) {
+                    this.statusDisplay.textContent = message || `${turn === 'r' ? "Red" : "Black"}'s Turn`;
+                },
+                
+                showMessage(text) {
+                    this.messageText.textContent = text;
+                    this.messageBox.style.opacity = '1';
+                    this.messageBox.style.transform = 'translateY(0)';
+                    setTimeout(() => {
+                        this.messageBox.style.opacity = '0';
+                        this.messageBox.style.transform = 'translateY(-2.5rem)';
+                    }, 4000);
+                },
+                
+                toggleTutorial(show) {
+                    const modal = this.tutorialModal;
+                    const content = modal.querySelector('.modal-content');
+                    if (show) {
+                        modal.classList.remove('hidden');
+                        setTimeout(() => {
+                            modal.classList.remove('opacity-0');
+                            content.classList.remove('scale-95');
+                        }, 10);
+                    } else {
+                        modal.classList.add('opacity-0');
+                        content.classList.add('scale-95');
+                        setTimeout(() => {
+                            modal.classList.add('hidden');
+                        }, 300);
+                    }
+                },
+
+                endGame(winner, logger) {
+                    const winnerName = (winner === 'r') ? "Red" : "Black";
+                    this.updateStatus(`${winnerName} wins by quantum entanglement!`);
+                    this.boardElement.querySelectorAll('.square').forEach(s => s.style.pointerEvents = 'none');
+                    logger.error('GAME OVER', `${winnerName} has won the game.`);
+                }
+            };
+        }
+    </script>
+</body>
+</html>
+
