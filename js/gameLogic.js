@@ -1,5 +1,5 @@
 // js/gameLogic.js
-// Core rules and state manipulation for Quantum Checkers.
+// Core rules and state manipulation for King Collapse.
 
 function isValidSquare(row, col) {
     return row >= 0 && row < 8 && col >= 0 && col < 8;
@@ -25,7 +25,7 @@ export function initGame() {
     return { pieces, boardState };
 }
 
-// This function is now async and returns a promise that resolves with an array of changes.
+// **REWRITE**: This function now recursively builds a list of animations to execute in order.
 export async function triggerCollapse(pieceId, targetHistoryIndex, pieces, boardState, ui, logger, protectedSquare) {
     let animationChanges = [];
     logger.group(`COLLAPSE: Piece ${pieceId}`);
@@ -34,9 +34,10 @@ export async function triggerCollapse(pieceId, targetHistoryIndex, pieces, board
     if (!piece) {
         logger.error('Collapse', `Piece ${pieceId} not found.`);
         logger.groupEnd();
-        return []; // **FIX**: Always return an array.
+        return [];
     }
 
+    // Base Case: Piece runs out of history and is captured.
     if (targetHistoryIndex < 0) {
         ui.showMessage(`Collapse failed! Piece ${pieceId} is captured.`);
         logger.error('Capture', `Piece ${pieceId} ran out of history and is captured.`);
@@ -47,13 +48,14 @@ export async function triggerCollapse(pieceId, targetHistoryIndex, pieces, board
         }
         delete pieces[pieceId];
         logger.groupEnd();
-        return animationChanges; // **FIX**: Return changes.
+        return animationChanges;
     }
 
     const currentPos = piece.history.at(-1);
     const targetPos = piece.history[targetHistoryIndex];
     logger.info('Collapse', `Piece ${pieceId} trying collapse to state #${targetHistoryIndex} at [${targetPos.row},${targetPos.col}].`);
 
+    // Base Case: Interference with the jumping piece's landing square.
     if (protectedSquare && targetPos.row === protectedSquare.row && targetPos.col === protectedSquare.col) {
         ui.showMessage(`Interference! Piece ${pieceId} is captured.`);
         logger.error('Capture', `Piece ${pieceId} tried to collapse into protected square and is captured.`);
@@ -63,20 +65,23 @@ export async function triggerCollapse(pieceId, targetHistoryIndex, pieces, board
         }
         delete pieces[pieceId];
         logger.groupEnd();
-        return animationChanges; // **FIX**: Return changes.
+        return animationChanges;
     }
 
     const occupyingId = boardState[targetPos.row][targetPos.col];
+    // Recursive Step: The target square is occupied, triggering a cascade.
     if (occupyingId && occupyingId !== pieceId) {
         logger.warn('Cascade', `Target [${targetPos.row},${targetPos.col}] occupied by ${occupyingId}. It must collapse first.`);
         const cascadeChanges = await triggerCollapse(occupyingId, pieces[occupyingId].history.length - 2, pieces, boardState, ui, logger, protectedSquare);
         animationChanges.push(...cascadeChanges);
         
+        // After the cascade, check if the square is *still* occupied.
         if (boardState[targetPos.row][targetPos.col]) {
             logger.warn('Collapse', `Target still occupied. ${pieceId} must try its next previous state.`);
             const selfCascadeChanges = await triggerCollapse(pieceId, targetHistoryIndex - 1, pieces, boardState, ui, logger, protectedSquare);
             animationChanges.push(...selfCascadeChanges);
         } else {
+            // The cascade was successful, the square is now free.
             logger.info('Collapse', `Cascade successful. Target [${targetPos.row},${targetPos.col}] is now free for ${pieceId}.`);
             boardState[currentPos.row][currentPos.col] = null;
             boardState[targetPos.row][targetPos.col] = pieceId;
@@ -84,6 +89,7 @@ export async function triggerCollapse(pieceId, targetHistoryIndex, pieces, board
             animationChanges.push({ type: 'move', pieceId: piece.id, toRow: targetPos.row, toCol: targetPos.col });
         }
     } else {
+        // Base Case: The target square is free, collapse successfully.
         logger.info('Collapse', `Target [${targetPos.row},${targetPos.col}] is free. Moving piece ${pieceId}.`);
         if (boardState[currentPos.row][currentPos.col] === pieceId) {
             boardState[currentPos.row][currentPos.col] = null;
@@ -97,7 +103,6 @@ export async function triggerCollapse(pieceId, targetHistoryIndex, pieces, board
 }
 
 export function getPossibleMoves(pieceId, pieces, boardState) {
-    // ... (This function is unchanged) ...
     const piece = pieces[pieceId];
     if (!piece) return [];
     
@@ -112,19 +117,29 @@ export function getPossibleMoves(pieceId, pieces, boardState) {
     for (const [dr, dc] of directions) {
         const jumpMidRow = row + dr, jumpMidCol = col + dc;
         const jumpEndRow = row + 2 * dr, jumpEndCol = col + 2 * dc;
+
         if (isValidSquare(jumpEndRow, jumpEndCol) && boardState[jumpEndRow][jumpEndCol] === null) {
+            let jumpedOnSquare = [];
             const realJumpedId = boardState[jumpMidRow][jumpMidCol];
             if (realJumpedId && pieces[realJumpedId]?.player !== piece.player) {
-                const historyIndex = pieces[realJumpedId].history.length - 1;
-                realJumpMoves.push({ endRow: jumpEndRow, endCol: jumpEndCol, jumpedInfo: { id: realJumpedId, isGhost: false, jumpedHistoryIndex: historyIndex } });
-            } else {
-                for (const id in pieces) {
-                    if (pieces[id].player !== piece.player) {
-                        const historyIndex = pieces[id].history.findIndex(p => p.row === jumpMidRow && p.col === jumpMidCol);
-                        if (historyIndex !== -1 && historyIndex < pieces[id].history.length - 1) {
-                            ghostJumpMoves.push({ endRow: jumpEndRow, endCol: jumpEndCol, jumpedInfo: { id, isGhost: true, jumpedHistoryIndex: historyIndex } });
-                        }
+                jumpedOnSquare.push({ id: realJumpedId, isGhost: false, jumpedHistoryIndex: pieces[realJumpedId].history.length - 1 });
+            }
+            for (const id in pieces) {
+                if (pieces[id].player !== piece.player) {
+                    const historyIndex = pieces[id].history.findIndex(p => p.row === jumpMidRow && p.col === jumpMidCol);
+                    if (historyIndex !== -1 && historyIndex < pieces[id].history.length - 1) {
+                        jumpedOnSquare.push({ id, isGhost: true, jumpedHistoryIndex: historyIndex });
                     }
+                }
+            }
+
+            if (jumpedOnSquare.length > 0) {
+                const isMandatory = jumpedOnSquare.some(j => !j.isGhost);
+                const move = { endRow: jumpEndRow, endCol: jumpEndCol, jumpedInfo: jumpedOnSquare };
+                if (isMandatory) {
+                    realJumpMoves.push(move);
+                } else {
+                    ghostJumpMoves.push(move);
                 }
             }
         }
@@ -136,14 +151,12 @@ export function getPossibleMoves(pieceId, pieces, boardState) {
     }
 
     if (realJumpMoves.length > 0) {
-        return [...new Map(realJumpMoves.map(item => [JSON.stringify(item.jumpedInfo), item])).values()];
+        return realJumpMoves;
     }
-    const allOptionalMoves = [...ghostJumpMoves, ...regularMoves];
-    return [...new Map(allOptionalMoves.map(item => [JSON.stringify(item), item])).values()];
+    return [...ghostJumpMoves, ...regularMoves];
 }
 
 export function checkWinCondition(pieces, turn, boardState) {
-    // ... (This function is unchanged) ...
     const redPieces = Object.values(pieces).filter(p => p.player === 'r');
     const blackPieces = Object.values(pieces).filter(p => p.player === 'b');
 

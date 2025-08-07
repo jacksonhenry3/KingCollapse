@@ -53,6 +53,12 @@ export function initUI() {
         return pieceElement;
     }
     
+    function addPieceToBoard(piece) {
+        const pieceElement = createPieceElement(piece);
+        elements.pieceLayer.appendChild(pieceElement);
+        return pieceElement;
+    }
+
     function renderBoard(squareClickHandler) {
         elements.board.innerHTML = '';
         for (let r = 0; r < 8; r++) {
@@ -67,14 +73,21 @@ export function initUI() {
         }
     }
 
-    // Creates a single ghost element.
-    function createGhostElement(piece, historyIndex) {
+    function createGhostElement(piece, historyIndex, stackIndex = 0) {
         const pos = piece.history[historyIndex];
         const ghostElement = document.createElement('div');
         ghostElement.className = `ghost-piece ${piece.player === 'r' ? 'red-piece' : 'black-piece'}`;
-        const { top, left } = getPixelPosition(pos.row, pos.col);
-        ghostElement.style.top = `${top}px`;
-        ghostElement.style.left = `${left}px`;
+        ghostElement.dataset.row = pos.row; // For easier querying
+        ghostElement.dataset.col = pos.col; // For easier querying
+        
+        const squareSize = elements.board.clientWidth / 8;
+        const ghostSize = 24;
+        const padding = 4; 
+        // **FIX**: Increased multiplier from 0.75 to 0.9 for more space.
+        const stackOffset = stackIndex * (ghostSize * 0.9);
+
+        ghostElement.style.top = `${pos.row * squareSize + padding}px`;
+        ghostElement.style.left = `${pos.col * squareSize + padding + stackOffset}px`;
 
         const idElement = document.createElement('span');
         idElement.className = 'piece-id';
@@ -89,9 +102,11 @@ export function initUI() {
         return ghostElement;
     }
 
-    // **NEW**: Adds a single ghost to the board without a full redraw.
+    // **FIX**: This function now reliably adds a single ghost, calculating its stack position.
     function addGhost(piece, historyIndex) {
-        const ghostElement = createGhostElement(piece, historyIndex);
+        const pos = piece.history[historyIndex];
+        const stackIndex = elements.ghostLayer.querySelectorAll(`.ghost-piece[data-row='${pos.row}'][data-col='${pos.col}']`).length;
+        const ghostElement = createGhostElement(piece, historyIndex, stackIndex);
         elements.ghostLayer.appendChild(ghostElement);
     }
 
@@ -104,12 +119,26 @@ export function initUI() {
         redCaptured.forEach(id => addPieceToGraveyard('r', id));
         blackCaptured.forEach(id => addPieceToGraveyard('b', id));
         
+        const ghostsBySquare = {};
         for (const id in pieces) {
             const piece = pieces[id];
             elements.pieceLayer.appendChild(createPieceElement(piece));
             
-            piece.history.slice(0, -1).forEach((pos, index) => {
-                elements.ghostLayer.appendChild(createGhostElement(piece, index));
+            piece.history.slice(0, -1).forEach((pos, historyIndex) => {
+                const key = `${pos.row},${pos.col}`;
+                if (!ghostsBySquare[key]) {
+                    ghostsBySquare[key] = [];
+                }
+                ghostsBySquare[key].push({ piece, historyIndex });
+            });
+        }
+        
+        for (const key in ghostsBySquare) {
+            const ghostsOnSquare = ghostsBySquare[key];
+            ghostsOnSquare.forEach((ghostInfo, stackIndex) => {
+                const { piece, historyIndex } = ghostInfo;
+                const ghostElement = createGhostElement(piece, historyIndex, stackIndex);
+                elements.ghostLayer.appendChild(ghostElement);
             });
         }
     }
@@ -122,18 +151,25 @@ export function initUI() {
         graveyard.appendChild(capturedElement);
     }
 
-    function animatePieceMove(pieceId, toRow, toCol) {
+    function animatePieceMove(pieceId, toRow, toCol, isFast = false) {
         return new Promise(resolve => {
             const pieceElement = document.getElementById(`piece-${pieceId}`);
             if (!pieceElement) {
                 resolve();
                 return;
             }
+            pieceElement.classList.add('is-moving');
+            pieceElement.style.transitionDuration = isFast ? '0.15s' : '';
+
             const { top, left } = getPixelPosition(toRow, toCol);
             pieceElement.style.top = `${top}px`;
             pieceElement.style.left = `${left}px`;
             
-            pieceElement.addEventListener('transitionend', resolve, { once: true });
+            pieceElement.addEventListener('transitionend', function onEnd() {
+                pieceElement.classList.remove('is-moving');
+                pieceElement.style.transitionDuration = '';
+                resolve();
+            }, { once: true });
         });
     }
     
@@ -235,6 +271,7 @@ export function initUI() {
         renderBoard,
         renderPieces,
         addGhost,
+        addPieceToBoard,
         animatePieceMove,
         animatePieceRemoval,
         highlightPieceAndMoves,
