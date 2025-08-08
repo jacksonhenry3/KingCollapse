@@ -1,7 +1,5 @@
 // js/ui.js
 // All functions related to DOM manipulation and rendering.
-// This module is now "dumber" and only responsible for what the user sees.
-// It receives data and instructions from the controller (main.js).
 
 import logger from './logger.js';
 
@@ -25,12 +23,6 @@ export function initUI(callbacks) {
         blackGraveyard: document.getElementById('black-graveyard'),
     };
 
-    /**
-     * Calculates the pixel position for a piece on the board.
-     * @param {number} row - The board row (0-7).
-     * @param {number} col - The board column (0-7).
-     * @returns {{top: number, left: number}}
-     */
     function getPixelPosition(row, col) {
         const squareSize = elements.board.clientWidth / 8;
         const pieceSize = squareSize * 0.8;
@@ -41,11 +33,6 @@ export function initUI(callbacks) {
         };
     }
 
-    /**
-     * Creates a DOM element for a game piece.
-     * @param {object} piece - The piece data object.
-     * @returns {HTMLElement}
-     */
     function createPieceElement(piece) {
         const pieceElement = document.createElement('div');
         pieceElement.id = `piece-${piece.id}`;
@@ -64,9 +51,6 @@ export function initUI(callbacks) {
         return pieceElement;
     }
 
-    /**
-     * Renders the checkerboard squares and attaches event listeners.
-     */
     function renderBoard() {
         elements.board.innerHTML = '';
         for (let r = 0; r < 8; r++) {
@@ -81,19 +65,12 @@ export function initUI(callbacks) {
         }
     }
     
-    /**
-     * Creates a DOM element for a ghost piece.
-     * @param {object} piece - The piece data object.
-     * @param {number} historyIndex - The index in the piece's history for this ghost.
-     * @param {number} stackIndex - The stacking order on the square.
-     * @returns {HTMLElement}
-     */
     function createGhostElement(piece, historyIndex, stackIndex = 0) {
         const pos = piece.history[historyIndex];
         const ghostElement = document.createElement('div');
+        // Give each ghost a unique and predictable ID
+        ghostElement.id = `ghost-${piece.id}-${historyIndex}`;
         ghostElement.className = `ghost-piece ${piece.player === 'r' ? 'red-piece' : 'black-piece'}`;
-        ghostElement.dataset.row = pos.row;
-        ghostElement.dataset.col = pos.col;
         
         const squareSize = elements.board.clientWidth / 8;
         const ghostSize = 24;
@@ -116,46 +93,94 @@ export function initUI(callbacks) {
     }
     
     /**
-     * Renders the entire game state from scratch. Used for initialization and undo.
+     * Synchronizes the entire visual state of the board with the game state.
+     * This function handles animations for appearing/disappearing ghosts.
      * @param {object} pieces - The state of all pieces.
      * @param {Array<string>} redCaptured - List of captured red piece IDs.
      * @param {Array<string>} blackCaptured - List of captured black piece IDs.
+     * @param {boolean} isHardReset - If true, skips animations (for new game/undo).
      */
-    function renderFullState(pieces, redCaptured, blackCaptured) {
+    function syncVisuals(pieces, redCaptured, blackCaptured, isHardReset = false) {
+        // --- Sync Pieces (simple redraw) ---
         elements.pieceLayer.innerHTML = '';
-        elements.ghostLayer.innerHTML = '';
-        elements.redGraveyard.querySelectorAll('.captured-piece').forEach(el => el.remove());
-        elements.blackGraveyard.querySelectorAll('.captured-piece').forEach(el => el.remove());
+        for (const id in pieces) {
+            elements.pieceLayer.appendChild(createPieceElement(pieces[id]));
+        }
 
-        redCaptured.forEach(id => addPieceToGraveyard('r', id));
-        blackCaptured.forEach(id => addPieceToGraveyard('b', id));
         
+        
+
+        // --- Sync Ghosts with Animation ---
+        const requiredGhosts = new Map();
         const ghostsBySquare = {};
+
+        // 1. Determine all ghosts that *should* be on the board.
         for (const id in pieces) {
             const piece = pieces[id];
-            elements.pieceLayer.appendChild(createPieceElement(piece));
-            
             piece.history.slice(0, -1).forEach((pos, historyIndex) => {
-                const key = `${pos.row},${pos.col}`;
-                if (!ghostsBySquare[key]) ghostsBySquare[key] = [];
-                ghostsBySquare[key].push({ piece, historyIndex });
+                const key = `ghost-${id}-${historyIndex}`;
+                requiredGhosts.set(key, { piece, historyIndex, pos });
+
+                const squareKey = `${pos.row},${pos.col}`;
+                if (!ghostsBySquare[squareKey]) ghostsBySquare[squareKey] = [];
+                ghostsBySquare[squareKey].push(key);
+                logger.info('Required ghost', key, 'for piece', piece.id, 'at', pos.row, pos.col, 'history index', historyIndex, 'square key', squareKey);
             });
         }
-        
-        for (const key in ghostsBySquare) {
-            ghostsBySquare[key].forEach((ghostInfo, stackIndex) => {
-                const { piece, historyIndex } = ghostInfo;
+
+                // NEW: Sort ghosts on each square by history index for stable stacking.
+                for (const squareKey in ghostsBySquare) {
+                    ghostsBySquare[squareKey].sort((keyA, keyB) => {
+                        const ghostA = requiredGhosts.get(keyA);
+                        const ghostB = requiredGhosts.get(keyB);
+                        return ghostA.historyIndex - ghostB.historyIndex;
+                    });
+                }
+
+        const domGhosts = new Map();
+        elements.ghostLayer.querySelectorAll('.ghost-piece').forEach(el => {
+            domGhosts.set(el.id, el);
+        });
+
+        // 2. Animate OUT ghosts that are in the DOM but no longer required.
+        domGhosts.forEach((el, id) => {
+            if (!requiredGhosts.has(id)) {
+                if (isHardReset) {
+                    el.remove();
+                } else {
+                    el.classList.add('removing');
+                    el.addEventListener('transitionend', () => el.remove(), { once: true });
+                }
+            }
+        });
+
+        // 3. Animate IN ghosts that are required but not yet in the DOM.
+        requiredGhosts.forEach(({ piece, historyIndex, pos }, key) => {
+            if (!domGhosts.has(key)) {
+                const squareKey = `${pos.row},${pos.col}`;
+                const stackIndex = ghostsBySquare[squareKey].indexOf(key);
+                logger.info('Creating ghost', key, 'for piece', piece.id, 'at', pos.row, pos.col, 'stack index', stackIndex, 'history index', historyIndex, 'square key', squareKey);
                 const ghostElement = createGhostElement(piece, historyIndex, stackIndex);
-                elements.ghostLayer.appendChild(ghostElement);
-            });
-        }
+                
+                if (isHardReset) {
+                    elements.ghostLayer.appendChild(ghostElement);
+                } else {
+                    ghostElement.classList.add('adding');
+                    elements.ghostLayer.appendChild(ghostElement);
+                setTimeout(() => {
+                    ghostElement.classList.remove('adding');
+                }, 0);
+                }
+            }
+        });
+
+        // --- Sync Graveyards (simple redraw) ---
+        elements.redGraveyard.querySelectorAll('.captured-piece').forEach(el => el.remove());
+        elements.blackGraveyard.querySelectorAll('.captured-piece').forEach(el => el.remove());
+        redCaptured.forEach(id => addPieceToGraveyard('r', id));
+        blackCaptured.forEach(id => addPieceToGraveyard('b', id));
     }
     
-    /**
-     * Adds a captured piece to the appropriate graveyard display.
-     * @param {string} player - The player of the captured piece ('r' or 'b').
-     * @param {string} pieceId - The ID of the captured piece.
-     */
     function addPieceToGraveyard(player, pieceId) {
         const capturedElement = document.createElement('div');
         capturedElement.className = `captured-piece ${player === 'r' ? 'red-piece' : 'black-piece'}`;
@@ -164,14 +189,6 @@ export function initUI(callbacks) {
         graveyard.appendChild(capturedElement);
     }
 
-    /**
-     * Animates a piece moving from its current position to a new one.
-     * @param {string} pieceId - The ID of the piece to animate.
-     * @param {number} toRow - The destination row.
-     * @param {number} toCol - The destination column.
-     * @param {boolean} isFast - Whether to use a faster animation speed.
-     * @returns {Promise<void>}
-     */
     function animatePieceMove(pieceId, toRow, toCol, isFast = false) {
         return new Promise(resolve => {
             const pieceElement = document.getElementById(`piece-${pieceId}`);
@@ -191,11 +208,6 @@ export function initUI(callbacks) {
         });
     }
     
-    /**
-     * Animates the removal of a piece from the board.
-     * @param {string} pieceId - The ID of the piece to remove.
-     * @returns {Promise<void>}
-     */
     function animatePieceRemoval(pieceId) {
         return new Promise(resolve => {
             const pieceElement = document.getElementById(`piece-${pieceId}`);
@@ -210,11 +222,6 @@ export function initUI(callbacks) {
         });
     }
 
-    /**
-     * Displays the selected piece and its possible moves.
-     * @param {string|null} pieceId - The ID of the piece to highlight.
-     * @param {Array<object>} possibleMoves - A list of valid moves for the piece.
-     */
     function displaySelection(pieceId, possibleMoves) {
         clearHighlights();
         if (pieceId) {
@@ -226,26 +233,15 @@ export function initUI(callbacks) {
         });
     }
     
-    /**
-     * Removes all selection and move highlights from the board.
-     */
     function clearHighlights() {
         document.querySelectorAll('.piece.selected').forEach(el => el.classList.remove('selected'));
         document.querySelectorAll('.square.possible-move').forEach(el => el.classList.remove('possible-move'));
     }
 
-    /**
-     * Updates the main status display message.
-     * @param {string} message - The text to display.
-     */
     function updateStatus(message) {
         elements.statusDisplay.textContent = message;
     }
     
-    /**
-     * Shows a temporary message notification.
-     * @param {string} text - The message to show.
-     */
     function showMessage(text) {
         elements.messageText.textContent = text;
         elements.messageBox.style.opacity = '1';
@@ -256,10 +252,6 @@ export function initUI(callbacks) {
         }, 4000);
     }
     
-    /**
-     * Shows or hides the tutorial modal.
-     * @param {boolean} show - True to show, false to hide.
-     */
     function toggleTutorial(show) {
         const modal = elements.tutorialModal;
         const content = modal.querySelector('.modal-content');
@@ -276,19 +268,12 @@ export function initUI(callbacks) {
         }
     }
 
-    /**
-     * Displays the end game message and disables the board.
-     * @param {string} message - The final message to display.
-     */
     function endGame(message) {
         updateStatus(message);
         elements.board.style.pointerEvents = 'none';
         logger.error('GAME OVER', message);
     }
     
-    /**
-     * Hides the initial game mode selection modal.
-     */
     function hideGameModeModal() {
         elements.gameModeModal.classList.add('opacity-0');
         setTimeout(() => {
@@ -296,7 +281,6 @@ export function initUI(callbacks) {
         }, 300);
     }
     
-    // Event listeners now fire custom events handled by the controller.
     elements.playHumanBtn.addEventListener('click', () => window.dispatchEvent(new CustomEvent('modeSelect', { detail: 'human' })));
     elements.playAiBtn.addEventListener('click', () => window.dispatchEvent(new CustomEvent('modeSelect', { detail: 'ai' })));
     elements.resetButton.addEventListener('click', () => window.dispatchEvent(new Event('gamereset')));
@@ -309,7 +293,9 @@ export function initUI(callbacks) {
     
     return {
         renderBoard,
-        renderFullState,
+        // The old renderFullState is now syncVisuals with the hard reset flag
+        renderFullState: (pieces, red, black) => syncVisuals(pieces, red, black, true),
+        syncVisuals,
         animatePieceMove,
         animatePieceRemoval,
         displaySelection,
