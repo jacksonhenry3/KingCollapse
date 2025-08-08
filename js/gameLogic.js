@@ -3,6 +3,8 @@
 // This module is now a pure "rules engine" with no UI dependencies.
 // It takes a game state, performs calculations, and returns the new state and a list of resulting events.
 
+import logger from "./logger.js";
+
 /**
  * Checks if a square is within the 8x8 board.
  * @param {number} row
@@ -188,6 +190,7 @@ function calculateCollapse(pieceId, targetHistoryIndex, pieces, boardState, prot
  * @returns {{newState: object, events: Array<object>}}
  */
 export function applyMove(gameState, pieceId, move) {
+    logger.info('Apply Move', `Applying move for piece ${pieceId} to (${move.endRow}, ${move.endCol})`);
     // Deep copy to ensure the original state is not mutated (immutability).
     let { pieces, boardState } = JSON.parse(JSON.stringify(gameState)); 
     const piece = pieces[pieceId];
@@ -243,7 +246,7 @@ export function applyMove(gameState, pieceId, move) {
             }
             events.push(...collapseEvents);
         }
-    }
+    
     
     // 5. Multi-Jump Event
     const furtherJumps = getPossibleMoves(pieceId, pieces, boardState).filter(m => m.jumpedInfo);
@@ -251,7 +254,7 @@ export function applyMove(gameState, pieceId, move) {
         const hasMandatory = furtherJumps.some(m => m.jumpedInfo.some(j => !j.isGhost));
         events.push({ type: 'multijump', pieceId, hasMandatory });
     }
-
+}
     return { newState: { pieces, boardState }, events };
 }
 

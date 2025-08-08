@@ -114,6 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
      * @param {object} move - The move object.
      */
     async function processMove(pieceId, move) {
+        logger.info('Process Move', `Piece ${pieceId} to (${move.endRow}, ${move.endCol})`);
         if (uiState.isAnimating) return;
         uiState.isAnimating = true;
         logger.group(`PROCESS MOVE: Piece ${pieceId}`);
@@ -188,7 +189,7 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     async function makeAIMove() {
         if (uiState.isAnimating || uiState.gameOver) return;
-        uiState.isAnimating = true;
+        // uiState.isAnimating = true;
         logger.group("AI TURN");
 
         const mustMoveId = uiState.isMultiJump ? uiState.selectedPieceId : null;
@@ -197,8 +198,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (aiMove) {
             logger.info('AI', `Chose to move piece ${aiMove.pieceId}.`);
             selectPiece(aiMove.pieceId); // Briefly show AI selection
-            await new Promise(resolve => setTimeout(resolve, 750));
+            // await new Promise(resolve => setTimeout(resolve, 750));
             await processMove(aiMove.pieceId, aiMove);
+            logger.info('AI', 'Move processed.');
         } else {
             // AI has no moves, which could be passing an optional jump or losing the game.
             logger.warn('AI', 'No moves available or chose to pass.');

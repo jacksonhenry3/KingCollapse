@@ -177,6 +177,10 @@ body {
     font-weight: bold;
     color: white;
 }
+
+.captured-piece.red-piece{
+    transform: rotate(180deg);
+}
 @media (max-width: 1024px) {
     body > .flex {
         flex-direction: column;
@@ -209,3 +213,8 @@ body {
 .modal-content {
     transition: transform 0.3s ease-in-out;
 }
+
+.black-piece .piece-id {
+    transform: rotate(180deg);
+}
+
