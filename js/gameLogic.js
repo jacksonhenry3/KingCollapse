@@ -142,6 +142,7 @@ function calculateCollapse(pieceId, targetHistoryIndex, pieces, boardState, prot
     
     const occupyingId = boardState[targetPos.row][targetPos.col];
 
+    // Case 4: Cascade. Target square is occupied by another piece.
 // Case 4: Target square is occupied. Check for cascade or interference.
 if (occupyingId && occupyingId !== pieceId) {
     const occupyingPiece = pieces[occupyingId];
@@ -183,7 +184,10 @@ if (occupyingId && occupyingId !== pieceId) {
         return events.concat(calculateCollapse(pieceId, targetHistoryIndex - 1, pieces, boardState, protectedSquare));
     }
 }
-
+ else { // Case 5: Simple collapse to an empty square.
+        const fromPos = piece.history.at(-1);
+        events.push({ type: 'collapse_move', pieceId, fromPos, toPos: targetPos, newHistoryIndex: targetHistoryIndex });
+    }
 
     return events;
 }
