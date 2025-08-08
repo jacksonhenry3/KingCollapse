@@ -142,8 +142,13 @@ function calculateCollapse(pieceId, targetHistoryIndex, pieces, boardState, prot
     
     const occupyingId = boardState[targetPos.row][targetPos.col];
 
-    // Case 4: Cascade. Target square is occupied by another piece.
-    if (occupyingId && occupyingId !== pieceId) {
+// Case 4: Target square is occupied. Check for cascade or interference.
+if (occupyingId && occupyingId !== pieceId) {
+    const occupyingPiece = pieces[occupyingId];
+
+    // NEW RULE: Only cascade if the occupying piece is a teammate.
+    if (occupyingPiece.player === piece.player) {
+        // It's a teammate, so proceed with the cascade.
         events.push({ type: 'cascade_start', triggerId: pieceId, targetId: occupyingId });
 
         // The occupying piece must collapse first.
@@ -172,11 +177,13 @@ function calculateCollapse(pieceId, targetHistoryIndex, pieces, boardState, prot
             const fromPos = piece.history.at(-1);
             events.push({ type: 'collapse_move', pieceId, fromPos, toPos: targetPos, newHistoryIndex: targetHistoryIndex });
         }
-
-    } else { // Case 5: Simple collapse to an empty square.
-        const fromPos = piece.history.at(-1);
-        events.push({ type: 'collapse_move', pieceId, fromPos, toPos: targetPos, newHistoryIndex: targetHistoryIndex });
+    } else {
+        // It's an opponent. The collapse fails, and we try an older state.
+        events.push({ type: 'interference', pieceId, reason: "Blocked by opponent" });
+        return events.concat(calculateCollapse(pieceId, targetHistoryIndex - 1, pieces, boardState, protectedSquare));
     }
+}
+
 
     return events;
 }
