@@ -1,10 +1,11 @@
 // js/ui.js
 // All functions related to DOM manipulation and rendering.
+// This module is now "dumber" and only responsible for what the user sees.
+// It receives data and instructions from the controller (main.js).
 
 import logger from './logger.js';
-import { getPossibleMoves } from './gameLogic.js';
 
-export function initUI() {
+export function initUI(callbacks) {
     const elements = {
         board: document.getElementById('board'),
         ghostLayer: document.getElementById('ghost-layer'),
@@ -24,6 +25,12 @@ export function initUI() {
         blackGraveyard: document.getElementById('black-graveyard'),
     };
 
+    /**
+     * Calculates the pixel position for a piece on the board.
+     * @param {number} row - The board row (0-7).
+     * @param {number} col - The board column (0-7).
+     * @returns {{top: number, left: number}}
+     */
     function getPixelPosition(row, col) {
         const squareSize = elements.board.clientWidth / 8;
         const pieceSize = squareSize * 0.8;
@@ -34,6 +41,11 @@ export function initUI() {
         };
     }
 
+    /**
+     * Creates a DOM element for a game piece.
+     * @param {object} piece - The piece data object.
+     * @returns {HTMLElement}
+     */
     function createPieceElement(piece) {
         const pieceElement = document.createElement('div');
         pieceElement.id = `piece-${piece.id}`;
@@ -49,17 +61,13 @@ export function initUI() {
         const { top, left } = getPixelPosition(piece.history.at(-1).row, piece.history.at(-1).col);
         pieceElement.style.top = `${top}px`;
         pieceElement.style.left = `${left}px`;
-
-        return pieceElement;
-    }
-    
-    function addPieceToBoard(piece) {
-        const pieceElement = createPieceElement(piece);
-        elements.pieceLayer.appendChild(pieceElement);
         return pieceElement;
     }
 
-    function renderBoard(squareClickHandler) {
+    /**
+     * Renders the checkerboard squares and attaches event listeners.
+     */
+    function renderBoard() {
         elements.board.innerHTML = '';
         for (let r = 0; r < 8; r++) {
             for (let c = 0; c < 8; c++) {
@@ -67,23 +75,29 @@ export function initUI() {
                 square.className = `square ${(r + c) % 2 === 0 ? 'light' : 'dark'}`;
                 square.dataset.row = r;
                 square.dataset.col = c;
-                square.addEventListener('click', squareClickHandler);
+                square.addEventListener('click', (e) => callbacks.onSquareClick(e));
                 elements.board.appendChild(square);
             }
         }
     }
-
+    
+    /**
+     * Creates a DOM element for a ghost piece.
+     * @param {object} piece - The piece data object.
+     * @param {number} historyIndex - The index in the piece's history for this ghost.
+     * @param {number} stackIndex - The stacking order on the square.
+     * @returns {HTMLElement}
+     */
     function createGhostElement(piece, historyIndex, stackIndex = 0) {
         const pos = piece.history[historyIndex];
         const ghostElement = document.createElement('div');
         ghostElement.className = `ghost-piece ${piece.player === 'r' ? 'red-piece' : 'black-piece'}`;
-        ghostElement.dataset.row = pos.row; // For easier querying
-        ghostElement.dataset.col = pos.col; // For easier querying
+        ghostElement.dataset.row = pos.row;
+        ghostElement.dataset.col = pos.col;
         
         const squareSize = elements.board.clientWidth / 8;
         const ghostSize = 24;
-        const padding = 4; 
-        // **FIX**: Increased multiplier from 0.75 to 0.9 for more space.
+        const padding = 4;
         const stackOffset = stackIndex * (ghostSize * 0.9);
 
         ghostElement.style.top = `${pos.row * squareSize + padding}px`;
@@ -98,19 +112,16 @@ export function initUI() {
         orderElement.className = 'ghost-order';
         orderElement.textContent = historyIndex + 1;
         ghostElement.appendChild(orderElement);
-        
         return ghostElement;
     }
-
-    // **FIX**: This function now reliably adds a single ghost, calculating its stack position.
-    function addGhost(piece, historyIndex) {
-        const pos = piece.history[historyIndex];
-        const stackIndex = elements.ghostLayer.querySelectorAll(`.ghost-piece[data-row='${pos.row}'][data-col='${pos.col}']`).length;
-        const ghostElement = createGhostElement(piece, historyIndex, stackIndex);
-        elements.ghostLayer.appendChild(ghostElement);
-    }
-
-    function renderPieces(pieces, redCaptured, blackCaptured) {
+    
+    /**
+     * Renders the entire game state from scratch. Used for initialization and undo.
+     * @param {object} pieces - The state of all pieces.
+     * @param {Array<string>} redCaptured - List of captured red piece IDs.
+     * @param {Array<string>} blackCaptured - List of captured black piece IDs.
+     */
+    function renderFullState(pieces, redCaptured, blackCaptured) {
         elements.pieceLayer.innerHTML = '';
         elements.ghostLayer.innerHTML = '';
         elements.redGraveyard.querySelectorAll('.captured-piece').forEach(el => el.remove());
@@ -126,16 +137,13 @@ export function initUI() {
             
             piece.history.slice(0, -1).forEach((pos, historyIndex) => {
                 const key = `${pos.row},${pos.col}`;
-                if (!ghostsBySquare[key]) {
-                    ghostsBySquare[key] = [];
-                }
+                if (!ghostsBySquare[key]) ghostsBySquare[key] = [];
                 ghostsBySquare[key].push({ piece, historyIndex });
             });
         }
         
         for (const key in ghostsBySquare) {
-            const ghostsOnSquare = ghostsBySquare[key];
-            ghostsOnSquare.forEach((ghostInfo, stackIndex) => {
+            ghostsBySquare[key].forEach((ghostInfo, stackIndex) => {
                 const { piece, historyIndex } = ghostInfo;
                 const ghostElement = createGhostElement(piece, historyIndex, stackIndex);
                 elements.ghostLayer.appendChild(ghostElement);
@@ -143,6 +151,11 @@ export function initUI() {
         }
     }
     
+    /**
+     * Adds a captured piece to the appropriate graveyard display.
+     * @param {string} player - The player of the captured piece ('r' or 'b').
+     * @param {string} pieceId - The ID of the captured piece.
+     */
     function addPieceToGraveyard(player, pieceId) {
         const capturedElement = document.createElement('div');
         capturedElement.className = `captured-piece ${player === 'r' ? 'red-piece' : 'black-piece'}`;
@@ -151,16 +164,21 @@ export function initUI() {
         graveyard.appendChild(capturedElement);
     }
 
+    /**
+     * Animates a piece moving from its current position to a new one.
+     * @param {string} pieceId - The ID of the piece to animate.
+     * @param {number} toRow - The destination row.
+     * @param {number} toCol - The destination column.
+     * @param {boolean} isFast - Whether to use a faster animation speed.
+     * @returns {Promise<void>}
+     */
     function animatePieceMove(pieceId, toRow, toCol, isFast = false) {
         return new Promise(resolve => {
             const pieceElement = document.getElementById(`piece-${pieceId}`);
-            if (!pieceElement) {
-                resolve();
-                return;
-            }
+            if (!pieceElement) return resolve();
+            
             pieceElement.classList.add('is-moving');
             pieceElement.style.transitionDuration = isFast ? '0.15s' : '';
-
             const { top, left } = getPixelPosition(toRow, toCol);
             pieceElement.style.top = `${top}px`;
             pieceElement.style.left = `${left}px`;
@@ -173,13 +191,17 @@ export function initUI() {
         });
     }
     
+    /**
+     * Animates the removal of a piece from the board.
+     * @param {string} pieceId - The ID of the piece to remove.
+     * @returns {Promise<void>}
+     */
     function animatePieceRemoval(pieceId) {
         return new Promise(resolve => {
             const pieceElement = document.getElementById(`piece-${pieceId}`);
-            if (!pieceElement) {
-                resolve();
-                return;
-            }
+            if (!pieceElement) return resolve();
+
+            addPieceToGraveyard(pieceElement.classList.contains('red-piece') ? 'r' : 'b', pieceId.replace('piece-',''));
             pieceElement.classList.add('removing');
             pieceElement.addEventListener('transitionend', () => {
                 pieceElement.remove();
@@ -188,30 +210,42 @@ export function initUI() {
         });
     }
 
-    function highlightPieceAndMoves(pieceId, pieces, boardState) {
+    /**
+     * Displays the selected piece and its possible moves.
+     * @param {string|null} pieceId - The ID of the piece to highlight.
+     * @param {Array<object>} possibleMoves - A list of valid moves for the piece.
+     */
+    function displaySelection(pieceId, possibleMoves) {
         clearHighlights();
-        const pieceElement = document.getElementById(`piece-${pieceId}`);
-        if (pieceElement) {
-            pieceElement.classList.add('selected');
+        if (pieceId) {
+            document.getElementById(`piece-${pieceId}`)?.classList.add('selected');
         }
-        
-        document.querySelectorAll('.possible-move').forEach(el => el.classList.remove('possible-move'));
-        const moves = getPossibleMoves(pieceId, pieces, boardState);
-        moves.forEach(move => {
+        possibleMoves.forEach(move => {
             const moveSquare = elements.board.querySelector(`[data-row='${move.endRow}'][data-col='${move.endCol}']`);
             if (moveSquare) moveSquare.classList.add('possible-move');
         });
     }
     
+    /**
+     * Removes all selection and move highlights from the board.
+     */
     function clearHighlights() {
         document.querySelectorAll('.piece.selected').forEach(el => el.classList.remove('selected'));
         document.querySelectorAll('.square.possible-move').forEach(el => el.classList.remove('possible-move'));
     }
 
-    function updateStatus(message, turn) {
-        elements.statusDisplay.textContent = message || `${turn === 'r' ? "Red" : "Black"}'s Turn`;
+    /**
+     * Updates the main status display message.
+     * @param {string} message - The text to display.
+     */
+    function updateStatus(message) {
+        elements.statusDisplay.textContent = message;
     }
     
+    /**
+     * Shows a temporary message notification.
+     * @param {string} text - The message to show.
+     */
     function showMessage(text) {
         elements.messageText.textContent = text;
         elements.messageBox.style.opacity = '1';
@@ -222,6 +256,10 @@ export function initUI() {
         }, 4000);
     }
     
+    /**
+     * Shows or hides the tutorial modal.
+     * @param {boolean} show - True to show, false to hide.
+     */
     function toggleTutorial(show) {
         const modal = elements.tutorialModal;
         const content = modal.querySelector('.modal-content');
@@ -238,25 +276,27 @@ export function initUI() {
         }
     }
 
-    function endGame(winner, gameMode) {
-        let winnerName = (winner === 'r') ? "Red" : "Black";
-        if (gameMode === 'ai' && winner === 'b') {
-            winnerName = "The AI";
-        } else if (gameMode === 'ai' && winner === 'r') {
-            winnerName = "You";
-        }
-        updateStatus(`${winnerName} win${winnerName === 'You' ? '' : 's'} by quantum entanglement!`);
+    /**
+     * Displays the end game message and disables the board.
+     * @param {string} message - The final message to display.
+     */
+    function endGame(message) {
+        updateStatus(message);
         elements.board.style.pointerEvents = 'none';
-        logger.error('GAME OVER', `${winnerName} has won the game.`);
+        logger.error('GAME OVER', message);
     }
     
+    /**
+     * Hides the initial game mode selection modal.
+     */
     function hideGameModeModal() {
         elements.gameModeModal.classList.add('opacity-0');
         setTimeout(() => {
             elements.gameModeModal.classList.add('hidden');
         }, 300);
     }
-
+    
+    // Event listeners now fire custom events handled by the controller.
     elements.playHumanBtn.addEventListener('click', () => window.dispatchEvent(new CustomEvent('modeSelect', { detail: 'human' })));
     elements.playAiBtn.addEventListener('click', () => window.dispatchEvent(new CustomEvent('modeSelect', { detail: 'ai' })));
     elements.resetButton.addEventListener('click', () => window.dispatchEvent(new Event('gamereset')));
@@ -269,17 +309,14 @@ export function initUI() {
     
     return {
         renderBoard,
-        renderPieces,
-        addGhost,
-        addPieceToBoard,
+        renderFullState,
         animatePieceMove,
         animatePieceRemoval,
-        highlightPieceAndMoves,
+        displaySelection,
         clearHighlights,
         updateStatus,
         showMessage,
         endGame,
         hideGameModeModal,
-        elements,
     };
 }

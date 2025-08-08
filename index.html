@@ -7,6 +7,7 @@
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- It's good practice to keep custom styles in a separate file -->
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body class="bg-gray-100 flex flex-col items-center justify-center min-h-screen p-4">
@@ -88,10 +89,12 @@
         </div>
     </div>
 
+    <!-- Message box for notifications -->
     <div id="message-box" class="fixed top-5 right-5 bg-red-500 text-white py-3 px-5 rounded-lg shadow-xl opacity-0 transform -translate-y-10">
         <p id="message-text"></p>
     </div>
 
+    <!-- The main script file that controls the game -->
     <script type="module" src="js/main.js"></script>
 </body>
 </html>
