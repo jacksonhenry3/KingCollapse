@@ -25,7 +25,6 @@ export function initGame() {
     return { pieces, boardState };
 }
 
-// **REWRITE**: This function now recursively builds a list of animations to execute in order.
 export async function triggerCollapse(pieceId, targetHistoryIndex, pieces, boardState, ui, logger, protectedSquare) {
     let animationChanges = [];
     logger.group(`COLLAPSE: Piece ${pieceId}`);
@@ -37,7 +36,6 @@ export async function triggerCollapse(pieceId, targetHistoryIndex, pieces, board
         return [];
     }
 
-    // Base Case: Piece runs out of history and is captured.
     if (targetHistoryIndex < 0) {
         ui.showMessage(`Collapse failed! Piece ${pieceId} is captured.`);
         logger.error('Capture', `Piece ${pieceId} ran out of history and is captured.`);
@@ -55,33 +53,27 @@ export async function triggerCollapse(pieceId, targetHistoryIndex, pieces, board
     const targetPos = piece.history[targetHistoryIndex];
     logger.info('Collapse', `Piece ${pieceId} trying collapse to state #${targetHistoryIndex} at [${targetPos.row},${targetPos.col}].`);
 
-    // Base Case: Interference with the jumping piece's landing square.
+    // **FIX**: If interference occurs, try the next older history state instead of capturing immediately.
     if (protectedSquare && targetPos.row === protectedSquare.row && targetPos.col === protectedSquare.col) {
-        ui.showMessage(`Interference! Piece ${pieceId} is captured.`);
-        logger.error('Capture', `Piece ${pieceId} tried to collapse into protected square and is captured.`);
-        animationChanges.push({ type: 'remove', pieceId: piece.id, player: piece.player });
-        if (boardState[currentPos.row][currentPos.col] === pieceId) {
-            boardState[currentPos.row][currentPos.col] = null;
-        }
-        delete pieces[pieceId];
+        ui.showMessage(`Interference with piece ${pieceId}! Trying older state.`);
+        logger.warn('Interference', `Piece ${pieceId} tried to collapse into protected square. Trying its next previous state.`);
+        const interferenceCascadeChanges = await triggerCollapse(pieceId, targetHistoryIndex - 1, pieces, boardState, ui, logger, protectedSquare);
+        animationChanges.push(...interferenceCascadeChanges);
         logger.groupEnd();
         return animationChanges;
     }
 
     const occupyingId = boardState[targetPos.row][targetPos.col];
-    // Recursive Step: The target square is occupied, triggering a cascade.
     if (occupyingId && occupyingId !== pieceId) {
         logger.warn('Cascade', `Target [${targetPos.row},${targetPos.col}] occupied by ${occupyingId}. It must collapse first.`);
         const cascadeChanges = await triggerCollapse(occupyingId, pieces[occupyingId].history.length - 2, pieces, boardState, ui, logger, protectedSquare);
         animationChanges.push(...cascadeChanges);
         
-        // After the cascade, check if the square is *still* occupied.
         if (boardState[targetPos.row][targetPos.col]) {
             logger.warn('Collapse', `Target still occupied. ${pieceId} must try its next previous state.`);
             const selfCascadeChanges = await triggerCollapse(pieceId, targetHistoryIndex - 1, pieces, boardState, ui, logger, protectedSquare);
             animationChanges.push(...selfCascadeChanges);
         } else {
-            // The cascade was successful, the square is now free.
             logger.info('Collapse', `Cascade successful. Target [${targetPos.row},${targetPos.col}] is now free for ${pieceId}.`);
             boardState[currentPos.row][currentPos.col] = null;
             boardState[targetPos.row][targetPos.col] = pieceId;
@@ -89,7 +81,6 @@ export async function triggerCollapse(pieceId, targetHistoryIndex, pieces, board
             animationChanges.push({ type: 'move', pieceId: piece.id, toRow: targetPos.row, toCol: targetPos.col });
         }
     } else {
-        // Base Case: The target square is free, collapse successfully.
         logger.info('Collapse', `Target [${targetPos.row},${targetPos.col}] is free. Moving piece ${pieceId}.`);
         if (boardState[currentPos.row][currentPos.col] === pieceId) {
             boardState[currentPos.row][currentPos.col] = null;
