@@ -74,7 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
         resetSelection();
 
         ui.renderBoard();
-        ui.renderFullState(gameState.pieces, gameState.redCaptured, gameState.blackCaptured);
+        ui.renderFullState(gameState.pieces, gameState.redCaptured, gameState.blackCaptured, true);
         updateStatusMessage();
         logger.info('Game Start', `Mode: ${uiState.gameMode}. Red player starts.`);
         logger.groupEnd();
@@ -146,6 +146,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         await animateEvents(events);
+        ui.renderFullState(gameState.pieces, gameState.redCaptured, gameState.blackCaptured);
         
         const lastEvent = events.at(-1);
         if (lastEvent?.type === 'multijump') {
@@ -297,7 +298,7 @@ document.addEventListener('DOMContentLoaded', () => {
         uiState.gameOver = false;
         document.getElementById('board').style.pointerEvents = 'auto';
         
-        ui.renderFullState(gameState.pieces, gameState.redCaptured, gameState.blackCaptured);
+        ui.renderFullState(gameState.pieces, gameState.redCaptured, gameState.blackCaptured, true);
         updateStatusMessage();
     });
 
