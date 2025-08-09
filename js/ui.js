@@ -5,23 +5,52 @@ import logger from './logger.js';
 
 export function initUI(callbacks) {
     const elements = {
+        // Views
+        mainMenu: document.getElementById('main-menu'),
+        gameView: document.getElementById('game-view'),
+
+        // Game elements
         board: document.getElementById('board'),
         ghostLayer: document.getElementById('ghost-layer'),
         pieceLayer: document.getElementById('piece-layer'),
         statusDisplay: document.getElementById('status-display'),
+        redGraveyard: document.getElementById('red-graveyard'),
+        blackGraveyard: document.getElementById('black-graveyard'),
+        
+        // In-Game Buttons
         resetButton: document.getElementById('reset-button'),
         undoButton: document.getElementById('undo-button'),
-        tutorialButton: document.getElementById('tutorial-button'),
-        closeTutorialButton: document.getElementById('close-tutorial-button'),
+        mainMenuButton: document.getElementById('main-menu-button'),
+
+        // Main Menu Buttons
+        menuNewGameBtn: document.getElementById('menu-new-game-btn'),
+        menuHowToPlayBtn: document.getElementById('menu-how-to-play-btn'),
+        menuOptionsBtn: document.getElementById('menu-options-btn'),
+
+        // Modals & Messages
         tutorialModal: document.getElementById('tutorial-modal'),
+        closeTutorialButton: document.getElementById('close-tutorial-button'),
         messageBox: document.getElementById('message-box'),
         messageText: document.getElementById('message-text'),
         gameModeModal: document.getElementById('game-mode-modal'),
         playHumanBtn: document.getElementById('play-human-btn'),
         playAiBtn: document.getElementById('play-ai-btn'),
-        redGraveyard: document.getElementById('red-graveyard'),
-        blackGraveyard: document.getElementById('black-graveyard'),
     };
+
+    /**
+     * Controls which main view is visible.
+     * @param {'menu' | 'game'} viewName - The view to show.
+     */
+    function showView(viewName) {
+        elements.mainMenu.classList.add('hidden');
+        elements.gameView.classList.add('hidden');
+
+        if (viewName === 'menu') {
+            elements.mainMenu.classList.remove('hidden');
+        } else if (viewName === 'game') {
+            elements.gameView.classList.remove('hidden');
+        }
+    }
 
     function getPixelPosition(row, col) {
         const squareSize = elements.board.clientWidth / 8;
@@ -68,7 +97,6 @@ export function initUI(callbacks) {
     function createGhostElement(piece, historyIndex, stackIndex = 0) {
         const pos = piece.history[historyIndex];
         const ghostElement = document.createElement('div');
-        // Give each ghost a unique and predictable ID
         ghostElement.id = `ghost-${piece.id}-${historyIndex}`;
         ghostElement.className = `ghost-piece ${piece.player === 'r' ? 'red-piece' : 'black-piece'}`;
         
@@ -92,57 +120,39 @@ export function initUI(callbacks) {
         return ghostElement;
     }
     
-    /**
-     * Synchronizes the entire visual state of the board with the game state.
-     * This function handles animations for appearing/disappearing ghosts.
-     * @param {object} pieces - The state of all pieces.
-     * @param {Array<string>} redCaptured - List of captured red piece IDs.
-     * @param {Array<string>} blackCaptured - List of captured black piece IDs.
-     * @param {boolean} isHardReset - If true, skips animations (for new game/undo).
-     */
     function syncVisuals(pieces, redCaptured, blackCaptured, isHardReset = false) {
-        // --- Sync Pieces (simple redraw) ---
         elements.pieceLayer.innerHTML = '';
         for (const id in pieces) {
             elements.pieceLayer.appendChild(createPieceElement(pieces[id]));
         }
 
-        
-        
-
-        // --- Sync Ghosts with Animation ---
         const requiredGhosts = new Map();
         const ghostsBySquare = {};
 
-        // 1. Determine all ghosts that *should* be on the board.
         for (const id in pieces) {
             const piece = pieces[id];
             piece.history.slice(0, -1).forEach((pos, historyIndex) => {
                 const key = `ghost-${id}-${historyIndex}`;
                 requiredGhosts.set(key, { piece, historyIndex, pos });
-
                 const squareKey = `${pos.row},${pos.col}`;
                 if (!ghostsBySquare[squareKey]) ghostsBySquare[squareKey] = [];
                 ghostsBySquare[squareKey].push(key);
-                logger.info('Required ghost', key, 'for piece', piece.id, 'at', pos.row, pos.col, 'history index', historyIndex, 'square key', squareKey);
             });
         }
 
-                // NEW: Sort ghosts on each square by history index for stable stacking.
-                for (const squareKey in ghostsBySquare) {
-                    ghostsBySquare[squareKey].sort((keyA, keyB) => {
-                        const ghostA = requiredGhosts.get(keyA);
-                        const ghostB = requiredGhosts.get(keyB);
-                        return ghostA.historyIndex - ghostB.historyIndex;
-                    });
-                }
+        for (const squareKey in ghostsBySquare) {
+            ghostsBySquare[squareKey].sort((keyA, keyB) => {
+                const ghostA = requiredGhosts.get(keyA);
+                const ghostB = requiredGhosts.get(keyB);
+                return ghostA.historyIndex - ghostB.historyIndex;
+            });
+        }
 
         const domGhosts = new Map();
         elements.ghostLayer.querySelectorAll('.ghost-piece').forEach(el => {
             domGhosts.set(el.id, el);
         });
 
-        // 2. Animate OUT ghosts that are in the DOM but no longer required.
         domGhosts.forEach((el, id) => {
             if (!requiredGhosts.has(id)) {
                 if (isHardReset) {
@@ -154,12 +164,10 @@ export function initUI(callbacks) {
             }
         });
 
-        // 3. Animate IN ghosts that are required but not yet in the DOM.
         requiredGhosts.forEach(({ piece, historyIndex, pos }, key) => {
             if (!domGhosts.has(key)) {
                 const squareKey = `${pos.row},${pos.col}`;
                 const stackIndex = ghostsBySquare[squareKey].indexOf(key);
-                logger.info('Creating ghost', key, 'for piece', piece.id, 'at', pos.row, pos.col, 'stack index', stackIndex, 'history index', historyIndex, 'square key', squareKey);
                 const ghostElement = createGhostElement(piece, historyIndex, stackIndex);
                 
                 if (isHardReset) {
@@ -167,14 +175,11 @@ export function initUI(callbacks) {
                 } else {
                     ghostElement.classList.add('adding');
                     elements.ghostLayer.appendChild(ghostElement);
-                setTimeout(() => {
-                    ghostElement.classList.remove('adding');
-                }, 0);
+                    setTimeout(() => ghostElement.classList.remove('adding'), 0);
                 }
             }
         });
 
-        // --- Sync Graveyards (simple redraw) ---
         elements.redGraveyard.querySelectorAll('.captured-piece').forEach(el => el.remove());
         elements.blackGraveyard.querySelectorAll('.captured-piece').forEach(el => el.remove());
         redCaptured.forEach(id => addPieceToGraveyard('r', id));
@@ -252,18 +257,17 @@ export function initUI(callbacks) {
         }, 4000);
     }
     
-    function toggleTutorial(show) {
-        const modal = elements.tutorialModal;
-        const content = modal.querySelector('.modal-content');
+    function toggleModal(modal, show) {
+        const content = modal.querySelector('.modal-content') || modal.children[0];
         if (show) {
             modal.classList.remove('hidden');
             setTimeout(() => {
                 modal.classList.remove('opacity-0');
-                content.classList.remove('scale-95');
+                if (content) content.classList.remove('scale-95');
             }, 10);
         } else {
             modal.classList.add('opacity-0');
-            content.classList.add('scale-95');
+            if (content) content.classList.add('scale-95');
             setTimeout(() => modal.classList.add('hidden'), 300);
         }
     }
@@ -274,28 +278,27 @@ export function initUI(callbacks) {
         logger.error('GAME OVER', message);
     }
     
-    function hideGameModeModal() {
-        elements.gameModeModal.classList.add('opacity-0');
-        setTimeout(() => {
-            elements.gameModeModal.classList.add('hidden');
-        }, 300);
-    }
-    
+    // --- Event Listeners ---
+    elements.menuNewGameBtn.addEventListener('click', () => toggleModal(elements.gameModeModal, true));
+    elements.menuHowToPlayBtn.addEventListener('click', () => toggleModal(elements.tutorialModal, true));
+    elements.menuOptionsBtn.addEventListener('click', () => showMessage("Options are not yet implemented."));
+
     elements.playHumanBtn.addEventListener('click', () => window.dispatchEvent(new CustomEvent('modeSelect', { detail: 'human' })));
     elements.playAiBtn.addEventListener('click', () => window.dispatchEvent(new CustomEvent('modeSelect', { detail: 'ai' })));
+    
     elements.resetButton.addEventListener('click', () => window.dispatchEvent(new Event('gamereset')));
     elements.undoButton.addEventListener('click', () => window.dispatchEvent(new Event('gameundo')));
-    elements.tutorialButton.addEventListener('click', () => toggleTutorial(true));
-    elements.closeTutorialButton.addEventListener('click', () => toggleTutorial(false));
+    elements.mainMenuButton.addEventListener('click', () => window.dispatchEvent(new Event('returntomenu')));
+
+    elements.closeTutorialButton.addEventListener('click', () => toggleModal(elements.tutorialModal, false));
     elements.tutorialModal.addEventListener('click', (e) => {
-        if (e.target === elements.tutorialModal) toggleTutorial(false);
+        if (e.target === elements.tutorialModal) toggleModal(elements.tutorialModal, false);
     });
     
     return {
+        showView,
         renderBoard,
-        // The old renderFullState is now syncVisuals with the hard reset flag
         renderFullState: (pieces, red, black) => syncVisuals(pieces, red, black, true),
-        syncVisuals,
         animatePieceMove,
         animatePieceRemoval,
         displaySelection,
@@ -303,6 +306,6 @@ export function initUI(callbacks) {
         updateStatus,
         showMessage,
         endGame,
-        hideGameModeModal,
+        toggleGameModeModal: (show) => toggleModal(elements.gameModeModal, show),
     };
 }

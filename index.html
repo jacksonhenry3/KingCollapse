@@ -7,13 +7,62 @@
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-    <!-- It's good practice to keep custom styles in a separate file -->
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body class="bg-gray-100 flex flex-col items-center justify-center min-h-screen p-4">
 
-    <!-- Game Mode Selection Modal -->
-    <div id="game-mode-modal" class="fixed inset-0 bg-gray-900 bg-opacity-80 flex items-center justify-center z-50 transition-opacity duration-300">
+    <!-- Main Menu View -->
+    <div id="main-menu" class="text-center">
+        <h1 class="text-5xl font-bold text-gray-800 mb-2">King Collapse</h1>
+        <p class="text-lg text-gray-600 mb-8">A Quantum Checkers Game</p>
+        <div class="space-y-4 flex flex-col items-center">
+            <button id="menu-new-game-btn" class="w-64 px-8 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-all text-lg transform hover:scale-105">
+                New Game
+            </button>
+            <button id="menu-how-to-play-btn" class="w-64 px-8 py-3 bg-gray-700 text-white font-semibold rounded-lg shadow-md hover:bg-gray-800 transition-all text-lg transform hover:scale-105">
+                How to Play
+            </button>
+            <button id="menu-options-btn" class="w-64 px-8 py-3 bg-white text-gray-700 border border-gray-300 font-semibold rounded-lg shadow-sm hover:bg-gray-50 transition-all text-lg transform hover:scale-105">
+                Options
+            </button>
+        </div>
+    </div>
+
+    <!-- Game View (Initially Hidden) -->
+    <div id="game-view" class="hidden">
+        <div class="w-full flex justify-center items-start space-x-4">
+            <!-- Black Player's Graveyard -->
+            <div id="black-graveyard" class="graveyard">
+                <h3 class="graveyard-title">Captured</h3>
+            </div>
+
+            <div id="game-container" class="w-full max-w-max flex flex-col items-center">
+                <div id="status-display" class="mb-4 text-xl sm:text-2xl font-bold text-gray-700 bg-white px-6 py-3 rounded-lg shadow-md">
+                    Select a game mode.
+                </div>
+
+                <div id="board-wrapper" class="relative">
+                    <div id="board" class="board"></div>
+                    <div id="ghost-layer" class="absolute top-0 left-0 w-full h-full pointer-events-none"></div>
+                    <div id="piece-layer" class="absolute top-0 left-0 w-full h-full pointer-events-none"></div>
+                </div>
+
+                <div class="flex flex-col sm:flex-row sm:space-x-4 mt-6 w-full max-w-xs sm:max-w-none sm:w-auto space-y-3 sm:space-y-0">
+                    <button id="main-menu-button" class="w-full sm:w-auto px-6 py-2 bg-red-600 text-white font-semibold rounded-lg shadow-md hover:bg-red-700 transition-colors">Main Menu</button>
+                    <button id="reset-button" class="w-full sm:w-auto px-6 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-colors">New Game</button>
+                    <button id="undo-button" class="w-full sm:w-auto px-6 py-2 bg-gray-600 text-white font-semibold rounded-lg shadow-md hover:bg-gray-700 transition-colors">Undo</button>
+                </div>
+            </div>
+
+            <!-- Red Player's Graveyard -->
+            <div id="red-graveyard" class="graveyard">
+                <h3 class="graveyard-title">Captured</h3>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals (no change) -->
+    <div id="game-mode-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-80 flex items-center justify-center z-50 transition-opacity duration-300 opacity-0">
         <div class="bg-white rounded-lg shadow-2xl p-8 text-center">
             <h2 class="text-3xl font-bold text-gray-800 mb-6">Choose Your Opponent</h2>
             <div class="flex space-x-4">
@@ -26,39 +75,6 @@
             </div>
         </div>
     </div>
-
-    <div class="w-full flex justify-center items-start space-x-4">
-        <!-- Black Player's Graveyard -->
-        <div id="black-graveyard" class="graveyard">
-            <h3 class="graveyard-title">Captured</h3>
-        </div>
-
-        <div id="game-container" class="w-full max-w-max flex flex-col items-center">
-            <h1 class="text-3xl sm:text-4xl font-bold text-gray-800 mb-4 text-center">King Collapse</h1>
-            <div id="status-display" class="mb-4 text-xl sm:text-2xl font-bold text-gray-700 bg-white px-6 py-3 rounded-lg shadow-md">
-                Select a game mode.
-            </div>
-
-            <div id="board-wrapper" class="relative">
-                <div id="board" class="board"></div>
-                <div id="ghost-layer" class="absolute top-0 left-0 w-full h-full pointer-events-none"></div>
-                <div id="piece-layer" class="absolute top-0 left-0 w-full h-full pointer-events-none"></div>
-            </div>
-
-            <div class="flex flex-col sm:flex-row sm:space-x-4 mt-6 w-full max-w-xs sm:max-w-none sm:w-auto space-y-3 sm:space-y-0">
-                <button id="tutorial-button" class="w-full sm:w-auto px-6 py-2 bg-white text-gray-700 border border-gray-300 font-semibold rounded-lg shadow-sm hover:bg-gray-50 transition-colors">How to Play</button>
-                <button id="reset-button" class="w-full sm:w-auto px-6 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-colors">New Game</button>
-                <button id="undo-button" class="w-full sm:w-auto px-6 py-2 bg-gray-600 text-white font-semibold rounded-lg shadow-md hover:bg-gray-700 transition-colors">Undo</button>
-            </div>
-        </div>
-
-        <!-- Red Player's Graveyard -->
-        <div id="red-graveyard" class="graveyard">
-            <h3 class="graveyard-title">Captured</h3>
-        </div>
-    </div>
-
-    <!-- Tutorial Modal -->
     <div id="tutorial-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 hidden modal-overlay opacity-0">
         <div class="modal-content bg-white rounded-lg shadow-2xl p-6 md:p-8 max-w-2xl w-full transform scale-95">
             <h2 class="text-3xl font-bold text-gray-800 mb-4">How to Play King Collapse</h2>
@@ -88,8 +104,6 @@
             </div>
         </div>
     </div>
-
-    <!-- Message box for notifications -->
     <div id="message-box" class="fixed top-5 right-5 bg-red-500 text-white py-3 px-5 rounded-lg shadow-xl opacity-0 transform -translate-y-10">
         <p id="message-text"></p>
     </div>

@@ -1,6 +1,5 @@
 // js/main.js
 // Main game controller. Manages state, handles user input, and orchestrates the game flow.
-// Follows a unidirectional data flow: (Input -> Controller -> Logic -> State -> UI)
 
 import logger from './logger.js';
 import * as logic from './gameLogic.js';
@@ -8,52 +7,70 @@ import { initUI } from './ui.js';
 import { getAIMove } from './ai.js';
 
 document.addEventListener('DOMContentLoaded', () => {
+    // --- Global State ---
+    let appState = 'menu'; // 'menu' or 'game'
+
     // --- Game State ---
-    // The single source of truth for the game's current state.
-    let gameState = {
-        pieces: {},
-        boardState: [],
-        turn: 'r',
-        redCaptured: [],
-        blackCaptured: [],
-    };
-    let gameHistory = []; // Stores previous game states for the undo feature.
+    let gameState = {};
+    let gameHistory = [];
     
     // --- UI/Controller State ---
-    // State related to the UI and current player interaction, not the game rules.
-    let uiState = {
-        selectedPieceId: null,
-        isAnimating: false,
-        isMultiJump: false,
-        gameMode: null, // 'human' or 'ai'
-        gameOver: false,
-    };
+    let uiState = {};
     const AI_PLAYER = 'b';
 
     // Initialize UI and provide callbacks for user actions
     const ui = initUI({ onSquareClick: handleSquareClick });
 
-    // --- Core Game Flow ---
-
     /**
-     * Sets up and starts a new game.
-     * @param {string} mode - The selected game mode ('human' or 'ai').
+     * Resets all state variables to their initial values.
      */
-    function startGame(mode) {
-        logger.group("NEW GAME");
-        uiState.gameMode = mode;
-        uiState.gameOver = false;
-        document.getElementById('board').style.pointerEvents = 'auto';
-
-        const { pieces, boardState } = logic.createInitialState();
+    function resetAllState() {
         gameState = {
-            pieces,
-            boardState,
+            pieces: {},
+            boardState: [],
             turn: 'r',
             redCaptured: [],
             blackCaptured: [],
         };
         gameHistory = [];
+        uiState = {
+            selectedPieceId: null,
+            isAnimating: false,
+            isMultiJump: false,
+            gameMode: null, 
+            gameOver: false,
+        };
+    }
+
+    // --- Core Application Flow ---
+
+    /**
+     * Switches to the main menu view and resets state.
+     */
+    function returnToMainMenu() {
+        logger.info('System', 'Returning to main menu.');
+        appState = 'menu';
+        resetAllState();
+        ui.showView('menu');
+    }
+
+    /**
+     * Sets up and starts a new game, switching to the game view.
+     * @param {string} mode - The selected game mode ('human' or 'ai').
+     */
+    function startGame(mode) {
+        logger.group("NEW GAME");
+        appState = 'game';
+        resetAllState(); 
+        ui.showView('game');
+
+        uiState.gameMode = mode;
+        document.getElementById('board').style.pointerEvents = 'auto';
+
+        const { pieces, boardState } = logic.createInitialState();
+        gameState.pieces = pieces;
+        gameState.boardState = boardState;
+        
         resetSelection();
 
         ui.renderBoard();
@@ -63,28 +80,24 @@ document.addEventListener('DOMContentLoaded', () => {
         logger.groupEnd();
     }
 
-    /**
-     * Handles clicks on any square on the board.
-     * @param {Event} e - The click event.
-     */
+    // --- Game Logic Handling ---
+
     async function handleSquareClick(e) {
         if (uiState.isAnimating || uiState.gameOver || (uiState.gameMode === 'ai' && gameState.turn === AI_PLAYER)) {
             return;
         }
-
+        // ... (rest of the function is unchanged)
         const square = e.currentTarget;
         const row = parseInt(square.dataset.row);
         const col = parseInt(square.dataset.col);
 
         if (uiState.selectedPieceId) {
-            // Player is trying to make a move with the selected piece.
             const possibleMoves = logic.getPossibleMoves(uiState.selectedPieceId, gameState.pieces, gameState.boardState);
             const targetMove = possibleMoves.find(move => move.endRow === row && move.endCol === col);
 
             if (targetMove) {
                 await processMove(uiState.selectedPieceId, targetMove);
             } else if (uiState.isMultiJump) {
-                // If in a multi-jump, check if clicking the piece again means they want to pass an optional jump.
                 const pieceIdOnSquare = gameState.boardState[row][col];
                 const furtherJumps = logic.getPossibleMoves(uiState.selectedPieceId, gameState.pieces, gameState.boardState).filter(m => m.jumpedInfo);
                 const hasMandatoryFurtherJump = furtherJumps.some(m => m.jumpedInfo.some(j => !j.isGhost));
@@ -96,11 +109,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     ui.showMessage("You must complete the mandatory jump.");
                 }
             } else {
-                // Invalid move, so deselect.
                 resetSelection();
             }
         } else {
-            // No piece is selected, so try to select one.
             const pieceId = gameState.boardState[row][col];
             if (pieceId && gameState.pieces[pieceId]?.player === gameState.turn) {
                 selectPiece(pieceId);
@@ -108,13 +119,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    /**
-     * Processes a move, gets events from the logic engine, and triggers animations.
-     * @param {string} pieceId - The ID of the piece to move.
-     * @param {object} move - The move object.
-     */
     async function processMove(pieceId, move) {
-        logger.info('Process Move', `Piece ${pieceId} to (${move.endRow}, ${move.endCol})`);
         if (uiState.isAnimating) return;
         uiState.isAnimating = true;
         logger.group(`PROCESS MOVE: Piece ${pieceId}`);
@@ -122,11 +127,8 @@ document.addEventListener('DOMContentLoaded', () => {
         gameHistory.push(JSON.parse(JSON.stringify(gameState)));
         resetSelection();
 
-        // 1. Get the new state and events from the logic engine.
         const { newState, events } = logic.applyMove(gameState, pieceId, move);
         
-        // 2. *** FIX: Commit the new state *before* animating. ***
-        // This ensures the final re-render uses the correct, updated state.
         const newRedCaptured = [...gameState.redCaptured];
         const newBlackCaptured = [...gameState.blackCaptured];
         events.forEach(event => {
@@ -136,17 +138,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         gameState = {
-            ...gameState, // keeps turn, etc. which is updated in endTurn()
+            ...gameState,
             pieces: newState.pieces,
             boardState: newState.boardState,
             redCaptured: newRedCaptured,
             blackCaptured: newBlackCaptured
         };
 
-        // 3. Animate the events based on the list we received.
         await animateEvents(events);
         
-        // 4. Check for multi-jump or end the turn.
         const lastEvent = events.at(-1);
         if (lastEvent?.type === 'multijump') {
             logger.info('Multi-Jump', `Further jumps available for ${lastEvent.pieceId}.`);
@@ -164,9 +164,6 @@ document.addEventListener('DOMContentLoaded', () => {
         logger.groupEnd();
     }
 
-    /**
-     * Finalizes the current turn, switches players, and checks for game over.
-     */
     function endTurn() {
         gameState.turn = (gameState.turn === 'r' ? 'b' : 'r');
         resetSelection();
@@ -177,19 +174,14 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             updateStatusMessage();
             uiState.isAnimating = false;
-            // Trigger AI turn if applicable
             if (uiState.gameMode === 'ai' && gameState.turn === AI_PLAYER) {
                 setTimeout(makeAIMove, 500);
             }
         }
     }
 
-    /**
-     * Gets a move from the AI and processes it.
-     */
     async function makeAIMove() {
         if (uiState.isAnimating || uiState.gameOver) return;
-        // uiState.isAnimating = true;
         logger.group("AI TURN");
 
         const mustMoveId = uiState.isMultiJump ? uiState.selectedPieceId : null;
@@ -197,24 +189,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (aiMove) {
             logger.info('AI', `Chose to move piece ${aiMove.pieceId}.`);
-            selectPiece(aiMove.pieceId); // Briefly show AI selection
-            // await new Promise(resolve => setTimeout(resolve, 750));
+            selectPiece(aiMove.pieceId);
             await processMove(aiMove.pieceId, aiMove);
             logger.info('AI', 'Move processed.');
         } else {
-            // AI has no moves, which could be passing an optional jump or losing the game.
             logger.warn('AI', 'No moves available or chose to pass.');
             endTurn();
         }
         logger.groupEnd();
     }
     
-    // --- Event Animation ---
-
-    /**
-     * Iterates through game events and plays the corresponding animations.
-     * @param {Array<object>} events - The list of events from the game logic.
-     */
     async function animateEvents(events) {
         for (const event of events) {
             switch (event.type) {
@@ -223,52 +207,39 @@ document.addEventListener('DOMContentLoaded', () => {
                     break;
                 case 'capture':
                     ui.showMessage(`Piece ${event.pieceId} captured! Reason: ${event.reason}.`);
-                    // The animatePieceRemoval function in ui.js handles the visual removal and adding to graveyard.
                     await ui.animatePieceRemoval(event.pieceId);
                     break;
                 case 'observation':
                     ui.showMessage(`Observation! A ${event.isGhost ? 'ghost' : 'piece'} of ${event.jumpedId} was jumped.`);
-                    await new Promise(r => setTimeout(r, 200)); // small delay
+                    await new Promise(r => setTimeout(r, 200));
                     break;
                 case 'collapse_move':
                     ui.showMessage(`Collapse! Piece ${event.pieceId} moved to a prior state.`);
                     await ui.animatePieceMove(event.pieceId, event.toPos.row, event.toPos.col, true);
                     break;
-                // Other events can be handled here for more detailed animations or sounds
                 case 'king':
                 case 'cascade_start':
                 case 'interference':
                     break;
             }
         }
-        // This final re-render now correctly uses the updated gameState.
         ui.renderFullState(gameState.pieces, gameState.redCaptured, gameState.blackCaptured);
     }
     
     // --- UI State Management ---
 
-    /**
-     * Selects a piece and shows its possible moves.
-     * @param {string} pieceId - The ID of the piece to select.
-     */
     function selectPiece(pieceId) {
         uiState.selectedPieceId = pieceId;
         const possibleMoves = logic.getPossibleMoves(pieceId, gameState.pieces, gameState.boardState);
         ui.displaySelection(pieceId, possibleMoves);
     }
 
-    /**
-     * Clears any piece selection and highlights.
-     */
     function resetSelection() {
         uiState.selectedPieceId = null;
         uiState.isMultiJump = false;
         ui.clearHighlights();
     }
 
-    /**
-     * Updates the status display with the current turn or action.
-     */
     function updateStatusMessage() {
         if (uiState.gameOver) return;
         let message;
@@ -282,10 +253,6 @@ document.addEventListener('DOMContentLoaded', () => {
         ui.updateStatus(message);
     }
 
-    /**
-     * Handles the end of the game.
-     * @param {string} winner - The winning player ('r' or 'b').
-     */
     function handleGameOver(winner) {
         uiState.gameOver = true;
         let message;
@@ -297,10 +264,10 @@ document.addEventListener('DOMContentLoaded', () => {
         ui.endGame(message);
     }
 
-    // --- Event Listeners for Buttons/Modals ---
+    // --- Event Listeners for Global Events ---
     
     window.addEventListener('modeSelect', (e) => {
-        ui.hideGameModeModal();
+        ui.toggleGameModeModal(false);
         startGame(e.detail);
     });
     
@@ -308,6 +275,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (uiState.gameMode) startGame(uiState.gameMode);
     });
     
+    window.addEventListener('returntomenu', () => {
+        returnToMainMenu();
+    });
+
     window.addEventListener('gameundo', () => {
         if (uiState.isAnimating || gameHistory.length === 0) {
             ui.showMessage("Cannot undo now.");
@@ -316,7 +287,6 @@ document.addEventListener('DOMContentLoaded', () => {
         
         logger.info('Undo', 'Reverting to previous game state.');
         
-        // In AI mode, undoing your move should also undo the AI's response.
         const undoCount = (uiState.gameMode === 'ai' && gameState.turn === 'r' && gameHistory.length >= 2) ? 2 : 1;
 
         for (let i = 0; i < undoCount; i++) {
@@ -330,4 +300,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ui.renderFullState(gameState.pieces, gameState.redCaptured, gameState.blackCaptured);
         updateStatusMessage();
     });
+
+    // --- Initial Setup ---
+    returnToMainMenu(); // Start the app at the main menu.
 });
