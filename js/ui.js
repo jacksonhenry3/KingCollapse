@@ -121,43 +121,88 @@ export function initUI(callbacks) {
     }
     
     function renderGhosts(pieces, isAnimated = true) {
-        elements.ghostLayer.innerHTML = '';
+        const requiredGhosts = new Map();
         const ghostsBySquare = {};
 
+        // Build a map of all required ghosts and group them by square.
         for (const id in pieces) {
             const piece = pieces[id];
             // Create ghosts for all but the most recent history entry.
             piece.history.slice(0, -1).forEach((pos, historyIndex) => {
+                const ghostId = `ghost-${piece.id}-${historyIndex}`;
                 const squareKey = `${pos.row},${pos.col}`;
-                if (!ghostsBySquare[squareKey]) ghostsBySquare[squareKey] = [];
+                
+                requiredGhosts.set(ghostId, { piece, historyIndex, pos });
+
+                if (!ghostsBySquare[squareKey]) {
+                    ghostsBySquare[squareKey] = [];
+                }
                 ghostsBySquare[squareKey].push({ piece, historyIndex });
             });
         }
 
-        let delay = 0;
-        
+        // Identify existing ghost elements in the DOM.
+        const existingDomGhosts = new Map();
+        elements.ghostLayer.querySelectorAll('.ghost-piece').forEach(el => {
+            existingDomGhosts.set(el.id, el);
+        });
+
+        // Remove ghost elements from DOM that are no longer required.
+        for (const [domId, element] of existingDomGhosts.entries()) {
+            if (!requiredGhosts.has(domId)) {
+                element.remove();
+            }
+        }
+
+        let animationDelay = 0;
         // Process squares in a consistent order for deterministic animation.
         const sortedSquareKeys = Object.keys(ghostsBySquare).sort();
 
+        // Add new ghosts and update positions of existing ones.
         for (const squareKey of sortedSquareKeys) {
-            // Sort ghosts on the same square by their history index to stack them correctly.
-            ghostsBySquare[squareKey].sort((a, b) => a.historyIndex - b.historyIndex);
+            // Sort ghosts on the square to determine stacking order.
+            const ghostsOnSquare = ghostsBySquare[squareKey];
+            ghostsOnSquare.sort((a, b) => a.historyIndex - b.historyIndex);
 
-            ghostsBySquare[squareKey].forEach(({ piece, historyIndex }, stackIndex) => {
-                const ghostElement = createGhostElement(piece, historyIndex, stackIndex);
-                elements.ghostLayer.appendChild(ghostElement);
+            ghostsOnSquare.forEach(({ piece, historyIndex }, stackIndex) => {
+                const ghostId = `ghost-${piece.id}-${historyIndex}`;
+                const existingElement = existingDomGhosts.get(ghostId);
                 
-                if (isAnimated) {
-                    // Initial state for animation: invisible and scaled down.
-                    ghostElement.style.opacity = '0';
-                    ghostElement.style.transform = 'scale(0.5)';
-                    // Stagger the animation start time.
-                    setTimeout(() => {
-                        ghostElement.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
-                        ghostElement.style.opacity = '1';
-                        ghostElement.style.transform = 'scale(1)';
-                    }, delay);
-                    delay += 50; 
+                if (existingElement) {
+                    // Ghost already exists, check if its position (from stacking) needs an update.
+                    const squareSize = elements.board.clientWidth / 8;
+                    const ghostSize = 24;
+                    const padding = 4;
+                    const stackOffset = stackIndex * (ghostSize * 0.9);
+                    const pos = piece.history[historyIndex];
+                    const newLeft = `${pos.col * squareSize + padding + stackOffset}px`;
+
+                    // Avoid triggering transition if position is already correct.
+                    if (existingElement.style.left !== newLeft) {
+                        existingElement.style.transition = 'left 0.3s ease';
+                        existingElement.style.left = newLeft;
+                        // Clean up transition property after animation.
+                        existingElement.addEventListener('transitionend', () => {
+                             existingElement.style.transition = '';
+                        }, { once: true });
+                    }
+                } else {
+                    // This is a new ghost, so create and animate its appearance.
+                    const ghostElement = createGhostElement(piece, historyIndex, stackIndex);
+                    elements.ghostLayer.appendChild(ghostElement);
+                    
+                    if (isAnimated) {
+                        // Initial state for animation.
+                        ghostElement.style.opacity = '0';
+                        ghostElement.style.transform = 'scale(0.5)';
+                        // Stagger the animation start time.
+                        setTimeout(() => {
+                            ghostElement.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+                            ghostElement.style.opacity = '1';
+                            ghostElement.style.transform = 'scale(1)';
+                        }, animationDelay);
+                        animationDelay += 50; 
+                    }
                 }
             });
         }
