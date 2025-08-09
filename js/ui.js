@@ -120,66 +120,60 @@ export function initUI(callbacks) {
         return ghostElement;
     }
     
-    function syncVisuals(pieces, redCaptured, blackCaptured, isHardReset = false) {
+    function renderGhosts(pieces, isAnimated = true) {
+        elements.ghostLayer.innerHTML = '';
+        const ghostsBySquare = {};
+
+        for (const id in pieces) {
+            const piece = pieces[id];
+            // Create ghosts for all but the most recent history entry.
+            piece.history.slice(0, -1).forEach((pos, historyIndex) => {
+                const squareKey = `${pos.row},${pos.col}`;
+                if (!ghostsBySquare[squareKey]) ghostsBySquare[squareKey] = [];
+                ghostsBySquare[squareKey].push({ piece, historyIndex });
+            });
+        }
+
+        let delay = 0;
+        
+        // Process squares in a consistent order for deterministic animation.
+        const sortedSquareKeys = Object.keys(ghostsBySquare).sort();
+
+        for (const squareKey of sortedSquareKeys) {
+            // Sort ghosts on the same square by their history index to stack them correctly.
+            ghostsBySquare[squareKey].sort((a, b) => a.historyIndex - b.historyIndex);
+
+            ghostsBySquare[squareKey].forEach(({ piece, historyIndex }, stackIndex) => {
+                const ghostElement = createGhostElement(piece, historyIndex, stackIndex);
+                elements.ghostLayer.appendChild(ghostElement);
+                
+                if (isAnimated) {
+                    // Initial state for animation: invisible and scaled down.
+                    ghostElement.style.opacity = '0';
+                    ghostElement.style.transform = 'scale(0.5)';
+                    // Stagger the animation start time.
+                    setTimeout(() => {
+                        ghostElement.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+                        ghostElement.style.opacity = '1';
+                        ghostElement.style.transform = 'scale(1)';
+                    }, delay);
+                    delay += 50; 
+                }
+            });
+        }
+    }
+
+    function renderFullState(pieces, redCaptured, blackCaptured, isHardReset = false) {
+        // Render the active pieces on the board.
         elements.pieceLayer.innerHTML = '';
         for (const id in pieces) {
             elements.pieceLayer.appendChild(createPieceElement(pieces[id]));
         }
 
-        const requiredGhosts = new Map();
-        const ghostsBySquare = {};
+        // Render the ghost pieces with or without animation.
+        renderGhosts(pieces, !isHardReset);
 
-        for (const id in pieces) {
-            const piece = pieces[id];
-            piece.history.slice(0, -1).forEach((pos, historyIndex) => {
-                const key = `ghost-${id}-${historyIndex}`;
-                requiredGhosts.set(key, { piece, historyIndex, pos });
-                const squareKey = `${pos.row},${pos.col}`;
-                if (!ghostsBySquare[squareKey]) ghostsBySquare[squareKey] = [];
-                ghostsBySquare[squareKey].push(key);
-            });
-        }
-
-        for (const squareKey in ghostsBySquare) {
-            ghostsBySquare[squareKey].sort((keyA, keyB) => {
-                const ghostA = requiredGhosts.get(keyA);
-                const ghostB = requiredGhosts.get(keyB);
-                return ghostA.historyIndex - ghostB.historyIndex;
-            });
-        }
-
-        const domGhosts = new Map();
-        elements.ghostLayer.querySelectorAll('.ghost-piece').forEach(el => {
-            domGhosts.set(el.id, el);
-        });
-
-        domGhosts.forEach((el, id) => {
-            if (!requiredGhosts.has(id)) {
-                if (isHardReset) {
-                    el.remove();
-                } else {
-                    el.classList.add('removing');
-                    el.addEventListener('transitionend', () => el.remove(), { once: true });
-                }
-            }
-        });
-
-        requiredGhosts.forEach(({ piece, historyIndex, pos }, key) => {
-            if (!domGhosts.has(key)) {
-                const squareKey = `${pos.row},${pos.col}`;
-                const stackIndex = ghostsBySquare[squareKey].indexOf(key);
-                const ghostElement = createGhostElement(piece, historyIndex, stackIndex);
-                
-                if (isHardReset) {
-                    elements.ghostLayer.appendChild(ghostElement);
-                } else {
-                    ghostElement.classList.add('adding');
-                    elements.ghostLayer.appendChild(ghostElement);
-                    setTimeout(() => ghostElement.classList.remove('adding'), 0);
-                }
-            }
-        });
-
+        // Update the captured pieces in the graveyards.
         elements.redGraveyard.querySelectorAll('.captured-piece').forEach(el => el.remove());
         elements.blackGraveyard.querySelectorAll('.captured-piece').forEach(el => el.remove());
         redCaptured.forEach(id => addPieceToGraveyard('r', id));
@@ -298,7 +292,7 @@ export function initUI(callbacks) {
     return {
         showView,
         renderBoard,
-        renderFullState: (pieces, red, black) => syncVisuals(pieces, red, black, true),
+        renderFullState,
         animatePieceMove,
         animatePieceRemoval,
         displaySelection,
