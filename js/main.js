@@ -223,7 +223,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     break;
             }
         }
-        ui.renderFullState(gameState.pieces, gameState.redCaptured, gameState.blackCaptured);
+        // The main render call is now handled after events are processed.
     }
     
     // --- UI State Management ---
