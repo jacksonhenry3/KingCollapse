@@ -99,6 +99,9 @@ export function initUI(callbacks) {
         const ghostElement = document.createElement('div');
         ghostElement.id = `ghost-${piece.id}-${historyIndex}`;
         ghostElement.className = `ghost-piece ${piece.player === 'r' ? 'red-piece' : 'black-piece'}`;
+        ghostElement.dataset.row = pos.row;
+        ghostElement.dataset.col = pos.col;
+        ghostElement.dataset.historyIndex = historyIndex;
         
         const squareSize = elements.board.clientWidth / 8;
         const ghostSize = 24;
@@ -259,11 +262,34 @@ export function initUI(callbacks) {
         });
     }
     
-    function animatePieceRemoval(pieceId) {
-        return new Promise(resolve => {
-            const pieceElement = document.getElementById(`piece-${pieceId}`);
-            if (!pieceElement) return resolve();
+    async function animatePieceRemoval(pieceId, reason = '') {
+        const pieceElement = document.getElementById(`piece-${pieceId}`);
+        if (!pieceElement) return;
 
+        // Only animate the timeline collapse for specific capture reasons.
+        const isTimelineCollapse = reason.includes('history') || reason.includes('Interference');
+        
+        if (isTimelineCollapse) {
+            const ghostElements = [...elements.ghostLayer.querySelectorAll(`[id^="ghost-${pieceId}-"]`)];
+            
+            if (ghostElements.length > 0) {
+                // Find all historical positions from the ghost elements.
+                const historyPath = ghostElements
+                    .map(g => ({
+                        row: parseInt(g.dataset.row, 10),
+                        col: parseInt(g.dataset.col, 10),
+                        historyIndex: parseInt(g.dataset.historyIndex, 10)
+                    }))
+                    .sort((a, b) => b.historyIndex - a.historyIndex); // Sort from most recent to oldest.
+
+                // Animate the piece moving back through its history.
+                for (const pos of historyPath) {
+                    await animatePieceMove(pieceId, pos.row, pos.col, true);
+                }
+            }
+        }
+        
+        return new Promise(resolve => {
             addPieceToGraveyard(pieceElement.classList.contains('red-piece') ? 'r' : 'b', pieceId.replace('piece-',''));
             pieceElement.classList.add('removing');
             pieceElement.addEventListener('transitionend', () => {

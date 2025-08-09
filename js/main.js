@@ -208,7 +208,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     break;
                 case 'capture':
                     ui.showMessage(`Piece ${event.pieceId} captured! Reason: ${event.reason}.`);
-                    await ui.animatePieceRemoval(event.pieceId);
+                    await ui.animatePieceRemoval(event.pieceId, event.reason);
                     break;
                 case 'observation':
                     ui.showMessage(`Observation! A ${event.isGhost ? 'ghost' : 'piece'} of ${event.jumpedId} was jumped.`);
