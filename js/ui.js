@@ -150,7 +150,14 @@ export function initUI(callbacks) {
         // Remove ghost elements from DOM that are no longer required.
         for (const [domId, element] of existingDomGhosts.entries()) {
             if (!requiredGhosts.has(domId)) {
-                element.remove();
+                if (isAnimated) {
+                    element.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+                    element.style.opacity = '0';
+                    element.style.transform = 'scale(0.5)';
+                    element.addEventListener('transitionend', () => element.remove(), { once: true });
+                } else {
+                    element.remove();
+                }
             }
         }
 
